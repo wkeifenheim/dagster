@@ -1,0 +1,13 @@
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  src: local(''), url(../fonts/Inter-VariableFont_slntwght.ttf) format('truetype');
+}
+
+@font-face {
+  font-family: 'Inconsolata';
+  font-style: normal;
+  font-weight: 400;
+  src: local(''), url(../fonts/Inconsolata-VariableFont_wdthwght.ttf) format('truetype');
+}
