@@ -39,6 +39,8 @@ class SensorEvaluationContext:
         last_run_key (str): DEPRECATED The run key of the RunRequest most recently created by this
             sensor. Use the preferred `cursor` attribute instead.
         repository_name (Optional[str]): The name of the repository that the sensor belongs to.
+        instance (Optional[DagsterInstance]): The deserialized instance can also be passed in
+            directly (primarily useful in testing contexts).
     """
 
     def __init__(
@@ -48,9 +50,10 @@ class SensorEvaluationContext:
         last_run_key: Optional[str],
         cursor: Optional[str],
         repository_name: Optional[str],
+        instance: Optional[DagsterInstance] = None,
     ):
         self._exit_stack = ExitStack()
-        self._instance = None
+        self._instance = check.opt_inst_param(instance, "instance", DagsterInstance)
 
         self._instance_ref = check.opt_inst_param(instance_ref, "instance_ref", InstanceRef)
         self._last_completion_time = check.opt_float_param(
@@ -72,11 +75,11 @@ class SensorEvaluationContext:
     def instance(self) -> DagsterInstance:
         # self._instance_ref should only ever be None when this SensorEvaluationContext was
         # constructed under test.
-        if not self._instance_ref:
-            raise DagsterInvariantViolationError(
-                "Attempted to initialize dagster instance, but no instance reference was provided."
-            )
         if not self._instance:
+            if not self._instance_ref:
+                raise DagsterInvariantViolationError(
+                    "Attempted to initialize dagster instance, but no instance reference was provided."
+                )
             self._instance = self._exit_stack.enter_context(
                 DagsterInstance.from_ref(self._instance_ref)
             )
@@ -416,11 +419,12 @@ def build_sensor_context(
     check.opt_str_param(cursor, "cursor")
     check.opt_str_param(repository_name, "repository_name")
     return SensorEvaluationContext(
-        instance_ref=instance.get_ref() if instance else None,
+        instance_ref=None,
         last_completion_time=None,
         last_run_key=None,
         cursor=cursor,
         repository_name=repository_name,
+        instance=instance,
     )
 
 
