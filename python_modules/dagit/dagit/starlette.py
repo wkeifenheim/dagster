@@ -24,6 +24,7 @@ from starlette.responses import (
     HTMLResponse,
     JSONResponse,
     PlainTextResponse,
+    RedirectResponse,
     StreamingResponse,
 )
 from starlette.routing import Mount, Route, WebSocketRoute
@@ -166,7 +167,7 @@ class DagitWebserver(GraphQLServer):
         return [_static_file(f) for f in ROOT_ADDRESS_STATIC_RESOURCES]
 
     def build_routes(self):
-        return [
+        routes = [
             Route("/dagit_info", self.dagit_info_endpoint),
             Route(
                 "/graphql",
@@ -215,6 +216,14 @@ class DagitWebserver(GraphQLServer):
             Route("/{path:path}", self.index_html_endpoint),
             Route("/", self.index_html_endpoint),
         ]
+
+        if self._app_path_prefix:
+            return [
+                Mount(self._app_path_prefix, routes=routes),
+                Route("/", lambda _: RedirectResponse(url=self._app_path_prefix)),
+            ]
+
+        return routes
 
 
 def default_app(debug=False):

@@ -190,7 +190,7 @@ def test_deploy_docker():
         assert (
             launch_res["data"]["launchPipelineExecution"]["__typename"]
             == "LaunchPipelineRunSuccess"
-        )
+        ), launch_res
 
         run = launch_res["data"]["launchPipelineExecution"]["run"]
         run_id = run["runId"]
@@ -221,7 +221,7 @@ def test_deploy_docker():
         assert (
             launch_res["data"]["launchPipelineExecution"]["__typename"]
             == "LaunchPipelineRunSuccess"
-        )
+        ), launch_res
 
         run = launch_res["data"]["launchPipelineExecution"]["run"]
         hanging_run_id = run["runId"]
@@ -239,7 +239,7 @@ def test_deploy_docker():
         assert (
             terminate_res["data"]["terminatePipelineExecution"]["__typename"]
             == "TerminatePipelineExecutionSuccess"
-        )
+        ), launch_res
 
         _wait_for_run_status(hanging_run_id, dagit_host, PipelineRunStatus.CANCELED)
 
