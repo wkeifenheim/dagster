@@ -7,6 +7,9 @@ from collections import namedtuple
 from typing import List
 
 import kubernetes
+from kubernetes.client.api_client import ApiClient as K8sApiClient
+import kubernetes.client.models as k8s_models
+import copy
 from dagster import Array, Field, Noneable, StringSource
 from dagster import __version__ as dagster_version
 from dagster import check
@@ -183,7 +186,7 @@ class DagsterK8sJobConfig(
         "_K8sJobTaskConfig",
         "job_image dagster_home image_pull_policy image_pull_secrets service_account_name "
         "instance_config_map postgres_password_secret env_config_maps env_secrets env_vars "
-        "volume_mounts",
+        "volume_mounts job_spec",
     )
 ):
     """Configuration parameters for launching Dagster Jobs on Kubernetes.
@@ -236,6 +239,7 @@ class DagsterK8sJobConfig(
         env_secrets=None,
         env_vars=None,
         volume_mounts=None,
+        job_spec=None,
     ):
         return super(DagsterK8sJobConfig, cls).__new__(
             cls,
@@ -256,6 +260,7 @@ class DagsterK8sJobConfig(
             env_secrets=check.opt_list_param(env_secrets, "env_secrets", of_type=str),
             env_vars=check.opt_list_param(env_vars, "env_secrets", of_type=str),
             volume_mounts=check.opt_list_param(volume_mounts, "volume_mounts"),
+            job_spec=check.opt_dict_param(job_spec, "job_spec", key_type=str),
         )
 
     @classmethod
@@ -345,6 +350,11 @@ class DagsterK8sJobConfig(
                 description="A list of environment variables to inject into the Job. "
                 "Default: ``[]``. See: "
                 "https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/#configure-all-key-value-pairs-in-a-secret-as-container-environment-variables",
+            ),
+            "job_spec": Field(
+                Noneable(Permissive()),
+                is_required=False,
+                description="A Kubernetes Job spec to use instead of the default. This is currently mutually exclusive with all other config, except job_image",
             ),
         }
 
@@ -452,6 +462,11 @@ def construct_dagster_k8s_job(
     if component:
         dagster_labels["app.kubernetes.io/component"] = component
 
+    job_image = user_defined_k8s_config.container_config.pop("image", job_config.job_image)
+
+    if job_config.job_spec:
+        return _construct_dagster_k8s_job_from_spec(job_config.job_spec, job_image, args, job_name)
+
     env = [kubernetes.client.V1EnvVar(name="DAGSTER_HOME", value=job_config.dagster_home)]
     if job_config.postgres_password_secret:
         env.append(
@@ -510,8 +525,6 @@ def construct_dagster_k8s_job(
         )
         for mount in job_config.volume_mounts
     ]
-
-    job_image = user_defined_k8s_config.container_config.pop("image", job_config.job_image)
 
     user_defined_k8s_volume_mounts = user_defined_k8s_config.container_config.pop(
         "volume_mounts", []
@@ -617,3 +630,18 @@ def get_k8s_job_name(input_1, input_2=None):
     name_hash = hashlib.md5((input_1 + input_2).encode("utf-8"))
 
     return name_hash.hexdigest()
+
+
+def _construct_dagster_k8s_job_from_spec(job_spec, job_image, args, job_name):
+    job_spec = copy.deepcopy(job_spec)
+
+    dagster_container = job_spec["spec"]["template"]["spec"]["containers"][0]
+    dagster_container["image"] = job_image
+    dagster_container["args"] = args
+
+    job_spec["metadata"]["name"] = job_name
+
+    # forced to use private method https://github.com/kubernetes-client/python/issues/977
+    return K8sApiClient()._ApiClient__deserialize_model(  # pylint: disable=protected-access
+        job_spec, k8s_models.V1Job
+    )
