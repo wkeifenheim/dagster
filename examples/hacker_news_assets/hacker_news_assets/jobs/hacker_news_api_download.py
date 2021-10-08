@@ -1,6 +1,7 @@
 import os
+from datetime import datetime
 
-from dagster import ResourceDefinition, fs_io_manager
+from dagster import ResourceDefinition, fs_io_manager, hourly_partitioned_config
 from dagster.core.asset_defs import build_assets_job
 from dagster.seven.temp_dir import get_system_temp_directory
 from dagster_aws.s3 import s3_pickle_io_manager, s3_resource
@@ -67,57 +68,41 @@ PROD_RESOURCES = {
     "hn_client": hn_api_subsample_client.configured({"sample_rate": 10}),
 }
 
-download_pipeline_properties = {
-    "description": "#### Owners:\n"
-    "schrockn@elementl.com, cat@elementl.com\n "
-    "#### About\n"
-    "This pipeline downloads all items from the HN API for a given day, "
-    "splits the items into stories and comment types using Spark, and uploads filtered items to "
-    "the corresponding stories or comments Snowflake table",
-    "tags": {
-        "dagster-k8s/config": {
-            "container_config": {
-                "resources": {
-                    "requests": {"cpu": "500m", "memory": "2Gi"},
-                }
-            },
-        }
-    },
+ASSETS = [id_range_for_time, items, comments, stories]
+
+DOWNLOAD_TAGS = {
+    "dagster-k8s/config": {
+        "container_config": {
+            "resources": {
+                "requests": {"cpu": "500m", "memory": "2Gi"},
+            }
+        },
+    }
 }
 
-assets = [id_range_for_time, items, comments, stories]
 
-download_comments_and_stories_dev = build_assets_job(
-    "download_comments_and_stories_dev",
-    assets=assets,
-    resource_defs=DEV_RESOURCES,
-    config={
+@hourly_partitioned_config(start_date=datetime(2021, 1, 1))
+def hourly_download_config(start: datetime, end: datetime):
+    return {
         "resources": {
-            "partition_start": {"config": "2020-12-30 00:00:00"},
-            "partition_end": {"config": "2020-12-30 01:00:00"},
-        },
-    },
-    description=(
-        "This job queries live HN data but does all writes locally. "
-        "It is meant to be used on a local machine"
-    ),
+            "partition_start": {"config": start.strftime("%Y-%m-%d %H:%m:%s")},
+            "partition_end": {"config": end.strftime("%Y-%m-%d %H:%m:%s")},
+        }
+    }
+
+
+download_staging_job = build_assets_job(
+    "download_staging_job",
+    assets=ASSETS,
+    resource_defs=DEV_RESOURCES,
+    config=hourly_download_config,
+    tags=DOWNLOAD_TAGS,
 )
 
-download_comments_and_stories_prod = build_assets_job(
-    "download_comments_and_stories_prod",
-    assets=assets,
+download_prod_job = build_assets_job(
+    "download_prod_job",
+    assets=ASSETS,
     resource_defs=PROD_RESOURCES,
-    description=(
-        "This mode queries live HN data and writes to a prod S3 bucket."
-        "Intended for use in production."
-    ),
-    tags={
-        "dagster-k8s/config": {
-            "container_config": {
-                "resources": {
-                    "requests": {"cpu": "500m", "memory": "2Gi"},
-                }
-            },
-        }
-    },
+    config=hourly_download_config,
+    tags=DOWNLOAD_TAGS,
 )

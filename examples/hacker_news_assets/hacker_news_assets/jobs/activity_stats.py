@@ -8,7 +8,7 @@ from dagster.utils import file_relative_path
 from dagster_dbt import dbt_cli_resource
 from dagster_dbt.asset_defs import load_assets_from_dbt_manifest
 from dagster_pyspark import pyspark_resource
-from hacker_news_assets.pipelines.download_pipeline import S3_SPARK_CONF
+from hacker_news_assets.jobs.hacker_news_api_download import S3_SPARK_CONF
 from hacker_news_assets.resources.snowflake_io_manager import (
     SHARED_SNOWFLAKE_CONF,
     connect_snowflake,
@@ -26,18 +26,14 @@ PROD_RESOURCES = {
         {"profiles_dir": DBT_PROFILES_DIR, "project_dir": DBT_PROJECT_DIR, "target": "prod"}
     ),
     "warehouse_io_manager": snowflake_io_manager_prod,
-    # "parquet_io_manager": parquet_io_manager.configured({"base_path": get_system_temp_directory()}),
     "pyspark": pyspark_resource,
 }
 
-DEV_RESOURCES = {
+STAGING_RESOURCES = {
     "dbt": dbt_cli_resource.configured(
         {"profiles-dir": DBT_PROFILES_DIR, "project-dir": DBT_PROJECT_DIR, "target": "dev"}
     ),
     "warehouse_io_manager": snowflake_io_manager_dev,
-    # "parquet_io_manager": parquet_io_manager.configured(
-    #     {"base_path": "s3://hackernews-elementl-prod"}
-    # ),
     "pyspark": pyspark_resource.configured(S3_SPARK_CONF),
 }
 
@@ -58,4 +54,9 @@ assets = load_assets_from_dbt_manifest(
     runtime_metadata_fn=asset_metadata,
     io_manager_key="warehouse_io_manager",
 )
-activity_stats = build_assets_job("activity_stats", assets, [], resource_defs=DEV_RESOURCES)
+activity_stats_staging_job = build_assets_job(
+    "activity_stats", assets, [], resource_defs=STAGING_RESOURCES
+)
+activity_stats_prod_job = build_assets_job(
+    "activity_stats", assets, [], resource_defs=PROD_RESOURCES
+)
