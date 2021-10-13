@@ -51,14 +51,15 @@ export const RepositoryAssetsList: React.FC<Props> = (props) => {
   });
 
   const repo = data?.repositoryOrError;
-  console.log(repo);
   const assetsForTable = React.useMemo(() => {
     if (!repo || repo.__typename !== 'Repository') {
       return null;
     }
     const items = repo.assetNodes.map((asset) => ({
       name: asset.assetKey.path.join(' > '),
-      path: `/assets/${asset.assetKey.path.map(encodeURIComponent).join('/')}`,
+      path: `/jobs/${asset.jobName}:default/${asset.assetKey.path
+        .map(encodeURIComponent)
+        .join('/')}`,
       description: asset.description,
       repoAddress,
     }));
