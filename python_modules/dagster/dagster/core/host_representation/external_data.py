@@ -20,6 +20,7 @@ from dagster.core.definitions import (
 from dagster.core.definitions.events import AssetKey
 from dagster.core.definitions.mode import DEFAULT_MODE_NAME
 from dagster.core.definitions.node import NodeDefinition
+from dagster.core.definitions.sensor import AssetSensorDefinition
 from dagster.core.definitions.partition import PartitionScheduleDefinition
 from dagster.core.definitions.sensor import AssetSensorDefinition
 from dagster.core.snap import PipelineSnapshot
