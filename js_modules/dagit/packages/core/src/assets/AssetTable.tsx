@@ -1,6 +1,5 @@
 import {gql, RefetchQueriesFunction} from '@apollo/client';
 import * as React from 'react';
-import {Link} from 'react-router-dom';
 
 import {useFeatureFlags} from '../app/Flags';
 import {usePermissions} from '../app/Permissions';
@@ -15,9 +14,9 @@ import {MenuItemWIP, MenuWIP} from '../ui/Menu';
 import {Popover} from '../ui/Popover';
 import {Table} from '../ui/Table';
 
+import {AssetLink} from './AssetLink';
 import {AssetWipeDialog} from './AssetWipeDialog';
 import {AssetTableFragment as Asset} from './types/AssetTableFragment';
-import {AssetLink} from './AssetLink';
 
 type AssetKey = {path: string[]};
 
@@ -230,8 +229,8 @@ const AssetActions: React.FC<{
     selected.length === 0
       ? 'Wipe assets'
       : selected.length === 1
-        ? 'Wipe 1 asset'
-        : `Wipe ${selected.length} assets`;
+      ? 'Wipe 1 asset'
+      : `Wipe ${selected.length} assets`;
 
   return (
     <>
