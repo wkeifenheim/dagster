@@ -479,7 +479,7 @@ enum StepKind {
 type Asset {
   id: String!
   key: AssetKey!
-  assetMaterializations(partitions: [String], beforeTimestampMillis: String, limit: Int): [AssetMaterialization!]!
+  assetMaterializations(partitions: [String], beforeTimestampMillis: String, afterTimestampMillis: String, limit: Int): [AssetMaterialization!]!
   tags: [AssetTag!]!
   definition: AssetNode
 }
@@ -595,7 +595,7 @@ type AssetNode {
   opName: String
   jobName: String
   dependencies: [AssetDependency!]!
-  assetMaterializations(partitions: [String], beforeTimestampMillis: String, limit: Int): [AssetMaterialization!]!
+  assetMaterializations(partitions: [String], beforeTimestampMillis: String, afterTimestampMillis: String, limit: Int): [AssetMaterialization!]!
 }
 
 type AssetDependency {
