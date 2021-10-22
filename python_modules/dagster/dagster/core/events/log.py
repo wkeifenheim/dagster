@@ -30,7 +30,7 @@ class EventLogEntry(
             ("run_id", str),
             ("timestamp", float),
             ("step_key", Optional[str]),
-            ("pipeline_name", Optional[str]),
+            ("job_name", Optional[str]),
             ("dagster_event", Optional[DagsterEvent]),
         ],
     )
@@ -55,8 +55,8 @@ class EventLogEntry(
         timestamp (float): The Unix timestamp of this event.
         step_key (Optional[str]): The step key for the step which generated this event. Some events
             are generated outside of a step context.
-        pipeline_name (Optional[str]): The pipeline which generated this event. Some events are
-            generated outside of a pipeline context.
+        job_name (Optional[str]): The job which generated this event. Some events are
+            generated outside of a job context.
         dagster_event (Optional[DagsterEvent]): For framework and user events, the associated
             structured event.
     """
@@ -70,7 +70,7 @@ class EventLogEntry(
         run_id,
         timestamp,
         step_key=None,
-        pipeline_name=None,
+        job_name=None,
         dagster_event=None,
     ):
         return super(EventLogEntry, cls).__new__(
@@ -82,13 +82,17 @@ class EventLogEntry(
             check.str_param(run_id, "run_id"),
             check.float_param(timestamp, "timestamp"),
             check.opt_str_param(step_key, "step_key"),
-            check.opt_str_param(pipeline_name, "pipeline_name"),
+            check.opt_str_param(job_name, "job_name"),
             check.opt_inst_param(dagster_event, "dagster_event", DagsterEvent),
         )
 
     @property
     def is_dagster_event(self) -> bool:
         return bool(self.dagster_event)
+
+    @property
+    def pipeline_name(self) -> Optional[str]:
+        return self.job_name
 
     def get_dagster_event(self) -> DagsterEvent:
         if not isinstance(self.dagster_event, DagsterEvent):
@@ -120,7 +124,7 @@ def construct_event_record(logger_message):
         run_id=logger_message.meta["run_id"],
         timestamp=logger_message.record.created,
         step_key=logger_message.meta.get("step_key"),
-        pipeline_name=logger_message.meta.get("pipeline_name"),
+        job_name=logger_message.meta.get("pipeline_name"),
         dagster_event=logger_message.meta.get("dagster_event"),
         error_info=None,
     )
