@@ -17,7 +17,7 @@ Dagster CLI
 
 .. click:: dagster.cli.job:job_cli
    :prog: dagster job
-   :show-nested:
+   :nested:
 
 .. click:: dagster.cli.run:run_cli
    :prog: dagster run
