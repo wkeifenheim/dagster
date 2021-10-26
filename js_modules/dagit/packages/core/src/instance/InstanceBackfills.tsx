@@ -1,17 +1,8 @@
 import {gql, useQuery, useMutation} from '@apollo/client';
-import {
-  Colors,
-  NonIdealState,
-  Popover,
-  Button,
-  Menu,
-  MenuItem,
-  Tag,
-  Intent,
-} from '@blueprintjs/core';
 import qs from 'qs';
 import * as React from 'react';
 import {useHistory, Link} from 'react-router-dom';
+import styled from 'styled-components/macro';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {SharedToaster} from '../app/DomUtils';
@@ -30,17 +21,34 @@ import {DagsterTag} from '../runs/RunTag';
 import {TerminationDialog} from '../runs/TerminationDialog';
 import {useCursorPaginatedQuery} from '../runs/useCursorPaginatedQuery';
 import {TimestampDisplay} from '../schedules/TimestampDisplay';
-import {BulkActionStatus, PipelineRunStatus} from '../types/globalTypes';
+import {BulkActionStatus, RunStatus} from '../types/globalTypes';
 import {Alert} from '../ui/Alert';
 import {Box} from '../ui/Box';
+import {ButtonWIP} from '../ui/Button';
 import {ButtonLink} from '../ui/ButtonLink';
+import {ColorsWIP} from '../ui/Colors';
 import {CursorPaginationControls} from '../ui/CursorControls';
 import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
 import {Loading} from '../ui/Loading';
+import {MenuItemWIP, MenuWIP} from '../ui/Menu';
+import {NonIdealState} from '../ui/NonIdealState';
+import {PageHeader} from '../ui/PageHeader';
+import {Popover} from '../ui/Popover';
 import {Table} from '../ui/Table';
+<<<<<<< HEAD
 import {Mono} from '../ui/Text';
 import {stringFromValue} from '../ui/TokenizingField';
 import {workspacePipelinePath} from '../workspace/workspacePath';
+=======
+import {TagWIP} from '../ui/TagWIP';
+import {Heading, Mono} from '../ui/Text';
+import {stringFromValue} from '../ui/TokenizingField';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
+import {buildRepoAddress} from '../workspace/buildRepoAddress';
+import {repoAddressAsString} from '../workspace/repoAddressAsString';
+import {workspacePathFromAddress, workspacePipelinePath} from '../workspace/workspacePath';
+>>>>>>> 1526964360e78354876b6adc7a9c90b1aaf7e296
 
 import {BackfillTerminationDialog} from './BackfillTerminationDialog';
 import {INSTANCE_HEALTH_FRAGMENT} from './InstanceHealthFragment';
@@ -81,8 +89,11 @@ export const InstanceBackfills = () => {
   useDocumentTitle('Backfills');
 
   return (
-    <Group direction="column" spacing={20}>
-      <InstanceTabs tab="backfills" />
+    <>
+      <PageHeader
+        title={<Heading>Instance status</Heading>}
+        tabs={<InstanceTabs tab="backfills" queryData={queryData} />}
+      />
       <Loading queryResult={queryResult} allowStaleData={true}>
         {({partitionBackfillsOrError}) => {
           if (partitionBackfillsOrError.__typename === 'PythonError') {
@@ -91,11 +102,13 @@ export const InstanceBackfills = () => {
 
           if (!partitionBackfillsOrError.results.length) {
             return (
-              <NonIdealState
-                icon="multi-select"
-                title="No backfills found"
-                description={<p>This instance does not have any backfill jobs.</p>}
-              />
+              <Box padding={{vertical: 64}}>
+                <NonIdealState
+                  icon="no-results"
+                  title="No backfills found"
+                  description={<p>This instance does not have any backfill jobs.</p>}
+                />
+              </Box>
             );
           }
 
@@ -106,9 +119,9 @@ export const InstanceBackfills = () => {
           const isBackfillHealthy = backfillHealths.length && backfillHealths.every((x) => x);
 
           return (
-            <>
+            <div>
               {isBackfillHealthy ? null : (
-                <Box margin={{bottom: 8}}>
+                <Box padding={{horizontal: 24, vertical: 16}}>
                   <Alert
                     intent="warning"
                     title="The backfill daemon is not running."
@@ -116,7 +129,7 @@ export const InstanceBackfills = () => {
                       <div>
                         See the{' '}
                         <a
-                          href="https://docs.dagster.io/overview/daemon"
+                          href="https://docs.dagster.io/deployment/dagster-daemon"
                           target="_blank"
                           rel="noreferrer"
                         >
@@ -137,11 +150,11 @@ export const InstanceBackfills = () => {
                   <CursorPaginationControls {...paginationProps} />
                 </div>
               ) : null}
-            </>
+            </div>
           );
         }}
       </Loading>
-    </Group>
+    </>
   );
 };
 
@@ -184,7 +197,7 @@ const BackfillTable = ({backfills, refetch}: {backfills: Backfill[]; refetch: ()
           </Group>
         ),
         icon: 'error',
-        intent: Intent.DANGER,
+        intent: 'danger',
       });
     } else {
       const error = data.resumePartitionBackfill;
@@ -193,7 +206,7 @@ const BackfillTable = ({backfills, refetch}: {backfills: Backfill[]; refetch: ()
           <Group direction="column" spacing={4}>
             <div>An unexpected error occurred. This backfill was not retried.</div>
             <ButtonLink
-              color={Colors.WHITE}
+              color={ColorsWIP.White}
               underline="always"
               onClick={() => {
                 showCustomAlert({
@@ -206,7 +219,7 @@ const BackfillTable = ({backfills, refetch}: {backfills: Backfill[]; refetch: ()
           </Group>
         ),
         icon: 'error',
-        intent: Intent.DANGER,
+        intent: 'danger',
       });
     }
   };
@@ -274,17 +287,30 @@ const BackfillRow = ({
     q: stringFromValue([{token: 'tag', value: `dagster/backfill=${backfill.backfillId}`}]),
   })}`;
 
-  const partitionSetBackfillUrl = backfill.partitionSet
-    ? workspacePipelinePath(
+  const repoAddress = backfill.partitionSet
+    ? buildRepoAddress(
         backfill.partitionSet.repositoryOrigin.repositoryName,
         backfill.partitionSet.repositoryOrigin.repositoryLocationName,
-        backfill.partitionSet.pipelineName,
-        backfill.partitionSet.mode,
-        `/partitions?${qs.stringify({
+      )
+    : null;
+  const repo = useRepository(repoAddress);
+  const isJob = !!(
+    repo &&
+    backfill.partitionSet &&
+    isThisThingAJob(repo, backfill.partitionSet.pipelineName)
+  );
+
+  const partitionSetBackfillUrl = backfill.partitionSet
+    ? workspacePipelinePath({
+        repoName: backfill.partitionSet.repositoryOrigin.repositoryName,
+        repoLocation: backfill.partitionSet.repositoryOrigin.repositoryLocationName,
+        pipelineName: backfill.partitionSet.pipelineName,
+        path: `/partitions?${qs.stringify({
           partitionSet: backfill.partitionSet.name,
           q: stringFromValue([{token: 'tag', value: `dagster/backfill=${backfill.backfillId}`}]),
         })}`,
-      )
+        isJob,
+      })
     : null;
 
   const canCancel = backfill.runs.some((run) => run.canTerminate);
@@ -313,17 +339,16 @@ const BackfillRow = ({
       <td>
         {[BulkActionStatus.CANCELED, BulkActionStatus.FAILED].includes(backfill.status) ? (
           <Box margin={{bottom: 12}}>
-            <Tag
-              minimal
-              intent="danger"
+            <TagButton
               onClick={() =>
                 backfill.error &&
                 showCustomAlert({title: 'Error', body: <PythonErrorInfo error={backfill.error} />})
               }
-              style={{cursor: backfill.error ? 'pointer' : 'default'}}
             >
-              {backfill.status}
-            </Tag>
+              <TagWIP intent="danger" interactive>
+                {backfill.status}
+              </TagWIP>
+            </TagButton>
           </Box>
         ) : null}
         <BackfillStatusTable backfill={backfill} />
@@ -332,21 +357,21 @@ const BackfillRow = ({
       <td style={{width: '100px'}}>
         <Popover
           content={
-            <Menu>
+            <MenuWIP>
               {canCancelPartitionBackfill ? (
                 <>
                   {counts.numUnscheduled && backfill.status === BulkActionStatus.REQUESTED ? (
-                    <MenuItem
+                    <MenuItemWIP
                       text="Cancel backfill submission"
-                      icon="stop"
+                      icon="cancel"
                       intent="danger"
                       onClick={() => onTerminateBackfill(backfill)}
                     />
                   ) : null}
                   {canCancel ? (
-                    <MenuItem
+                    <MenuItemWIP
                       text="Terminate unfinished runs"
-                      icon="stop"
+                      icon="cancel"
                       intent="danger"
                       onClick={() => onTerminateBackfill(backfill)}
                     />
@@ -356,35 +381,47 @@ const BackfillRow = ({
               {canLaunchPartitionBackfill &&
               backfill.status === BulkActionStatus.FAILED &&
               backfill.partitionSet ? (
-                <MenuItem
+                <MenuItemWIP
                   text="Resume failed backfill"
                   title="Submits runs for all partitions in the backfill that do not have a corresponding run. Does not retry failed runs."
-                  icon="repeat"
+                  icon="refresh"
                   onClick={() => onResumeBackfill(backfill)}
                 />
               ) : null}
               {partitionSetBackfillUrl ? (
-                <MenuItem
+                <MenuItemWIP
                   text="View Partition Matrix"
-                  icon="multi-select"
+                  icon="view_list"
                   onClick={() => history.push(partitionSetBackfillUrl)}
                 />
               ) : null}
-              <MenuItem
+              <MenuItemWIP
                 text="View Backfill Runs"
-                icon="history"
+                icon="settings_backup_restore"
                 onClick={() => history.push(runsUrl)}
               />
-            </Menu>
+            </MenuWIP>
           }
-          position="bottom"
+          position="bottom-right"
         >
-          <Button small minimal icon="chevron-down" style={{marginLeft: '4px'}} />
+          <ButtonWIP icon={<IconWIP name="expand_more" />} />
         </Popover>
       </td>
     </tr>
   );
 };
+
+const TagButton = styled.button`
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+
+  :focus {
+    outline: none;
+  }
+`;
 
 const getProgressCounts = (backfill: Backfill) => {
   const byPartitionRuns: {[key: string]: BackfillRun} = {};
@@ -400,7 +437,7 @@ const getProgressCounts = (backfill: Backfill) => {
 
   const latestPartitionRuns = Object.values(byPartitionRuns);
   const {numQueued, numInProgress, numSucceeded, numFailed} = latestPartitionRuns.reduce(
-    (accum: any, {status}: {status: PipelineRunStatus}) => {
+    (accum: any, {status}: {status: RunStatus}) => {
       return {
         numQueued: accum.numQueued + (queuedStatuses.has(status) ? 1 : 0),
         numInProgress: accum.numInProgress + (inProgressStatuses.has(status) ? 1 : 0),
@@ -432,10 +469,10 @@ const BackfillProgress = ({backfill}: {backfill: Backfill}) => {
   return (
     <span
       style={{
-        fontSize: 36,
-        fontWeight: 'bold',
-        color: Colors.GRAY1,
-        fontVariantNumeric: 'tabular-nums',
+        lineHeight: '32px',
+        fontSize: '36px',
+        fontWeight: 600,
+        color: ColorsWIP.Gray600,
       }}
     >
       {numTotal ? Math.floor((100 * numCompleted) / numTotal) : '-'}%
@@ -445,35 +482,44 @@ const BackfillProgress = ({backfill}: {backfill: Backfill}) => {
 
 const PartitionSetReference: React.FunctionComponent<{
   partitionSet: InstanceBackfillsQuery_partitionBackfillsOrError_PartitionBackfills_results_partitionSet;
-}> = ({partitionSet}) => (
-  <Group direction={'column'} spacing={8}>
-    <Link
-      to={workspacePipelinePath(
-        partitionSet.repositoryOrigin.repositoryName,
-        partitionSet.repositoryOrigin.repositoryLocationName,
-        partitionSet.pipelineName,
-        partitionSet.mode,
-        `/partitions?partitionSet=${encodeURIComponent(partitionSet.name)}`,
-      )}
-    >
-      {partitionSet.name}
-    </Link>
-    <span style={{color: Colors.DARK_GRAY3, fontSize: 12}}>
-      {partitionSet.repositoryOrigin.repositoryName}@
-      {partitionSet.repositoryOrigin.repositoryLocationName}
-    </span>
-    <PipelineReference
-      showIcon
-      fontSize={13}
-      pipelineName={partitionSet.pipelineName}
-      pipelineHrefContext={{
-        name: partitionSet.repositoryOrigin.repositoryName,
-        location: partitionSet.repositoryOrigin.repositoryLocationName,
-      }}
-      mode={partitionSet.mode}
-    />
-  </Group>
-);
+}> = ({partitionSet}) => {
+  const repoAddress = buildRepoAddress(
+    partitionSet.repositoryOrigin.repositoryName,
+    partitionSet.repositoryOrigin.repositoryLocationName,
+  );
+  const repo = useRepository(repoAddress);
+  const isJob = !!(repo && isThisThingAJob(repo, partitionSet.pipelineName));
+
+  return (
+    <Box flex={{direction: 'column', gap: 8}}>
+      <Link
+        to={workspacePipelinePath({
+          repoName: partitionSet.repositoryOrigin.repositoryName,
+          repoLocation: partitionSet.repositoryOrigin.repositoryLocationName,
+          pipelineName: partitionSet.pipelineName,
+          isJob,
+          path: `/partitions?partitionSet=${encodeURIComponent(partitionSet.name)}`,
+        })}
+      >
+        {partitionSet.name}
+      </Link>
+      <Box flex={{direction: 'row', gap: 8, alignItems: 'center'}}>
+        <IconWIP name="repo" color={ColorsWIP.Gray400} />
+        <Link to={workspacePathFromAddress(repoAddress)}>{repoAddressAsString(repoAddress)}</Link>
+      </Box>
+      <PipelineReference
+        showIcon
+        size="small"
+        pipelineName={partitionSet.pipelineName}
+        pipelineHrefContext={{
+          name: partitionSet.repositoryOrigin.repositoryName,
+          location: partitionSet.repositoryOrigin.repositoryLocationName,
+        }}
+        isJob={isJob}
+      />
+    </Box>
+  );
+};
 const BackfillStatusTable = ({backfill}: {backfill: Backfill}) => {
   const {
     numQueued,
@@ -486,7 +532,7 @@ const BackfillStatusTable = ({backfill}: {backfill: Backfill}) => {
   } = React.useMemo(() => getProgressCounts(backfill), [backfill]);
 
   return (
-    <Table style={{marginRight: 20, maxWidth: 250}}>
+    <StyledTable>
       <tbody>
         <BackfillStatusTableRow label="Queued" count={numQueued} />
         <BackfillStatusTableRow label="In progress" count={numInProgress} />
@@ -500,9 +546,29 @@ const BackfillStatusTable = ({backfill}: {backfill: Backfill}) => {
         )}
         <BackfillStatusTableRow label="Total" count={numTotal} isTotal={true} />
       </tbody>
-    </Table>
+    </StyledTable>
   );
 };
+
+const StyledTable = styled.table`
+  max-width: 250px;
+  border-collapse: collapse;
+
+  &&& tr td {
+    box-shadow: none !important;
+    padding: 0 24px 4px 0;
+    margin: 0;
+  }
+
+  &&& tr td:last-child {
+    padding-right: 0;
+    text-align: right;
+  }
+
+  &&& tr.total td {
+    font-weight: 600;
+  }
+`;
 
 const BackfillStatusTableRow = ({
   label,
@@ -517,32 +583,9 @@ const BackfillStatusTableRow = ({
     return null;
   }
   return (
-    <tr
-      style={{
-        boxShadow: 'none',
-        fontVariant: 'tabular-nums',
-      }}
-    >
-      <td
-        style={{
-          borderTop: isTotal ? `1px solid ${Colors.LIGHT_GRAY1}` : undefined,
-          maxWidth: '100px',
-          padding: '3px 5px',
-        }}
-      >
-        <Group direction="row" spacing={8} alignItems="center">
-          <div>{label}</div>
-        </Group>
-      </td>
-      <td
-        style={{
-          borderTop: isTotal ? `1px solid ${Colors.LIGHT_GRAY1}` : undefined,
-          maxWidth: '50px',
-          padding: '3px 5px',
-        }}
-      >
-        <Box flex={{justifyContent: 'flex-end'}}>{count}</Box>
-      </td>
+    <tr className={isTotal ? 'total' : undefined}>
+      <td>{label}</td>
+      <td>{count}</td>
     </tr>
   );
 };

@@ -1,6 +1,5 @@
 import os
 import pickle
-import time
 import uuid
 
 import dagstermill
@@ -16,15 +15,15 @@ from dagster import (
     String,
     composite_solid,
     fs_io_manager,
+    job,
     pipeline,
     repository,
     resource,
     solid,
 )
 from dagster.core.storage.file_manager import local_file_manager
-from dagster.core.types.dagster_type import DagsterType
-from dagster.core.types.marshal import SerializationStrategy
 from dagster.utils import PICKLE_PROTOCOL, file_relative_path
+from dagstermill.io_managers import local_output_notebook_io_manager
 
 try:
     from dagster_pandas import DataFrame
@@ -66,7 +65,19 @@ def test_nb_solid(name, **kwargs):
     return dagstermill.define_dagstermill_solid(
         name=name,
         notebook_path=nb_test_path(name),
-        output_notebook="notebook",
+        output_notebook_name="notebook",
+        output_defs=output_defs,
+        **kwargs,
+    )
+
+
+def test_nb_op(name, path, **kwargs):
+    output_defs = kwargs.pop("output_defs", [OutputDefinition(is_required=False)])
+
+    return dagstermill.define_dagstermill_op(
+        name=name,
+        notebook_path=path,
+        output_notebook_name="notebook",
         output_defs=output_defs,
         **kwargs,
     )
@@ -75,7 +86,7 @@ def test_nb_solid(name, **kwargs):
 default_mode_defs = [
     ModeDefinition(
         resource_defs={
-            "file_manager": local_file_manager,
+            "output_notebook_io_manager": local_output_notebook_io_manager,
             "io_manager": fs_io_manager,
         }
     )
@@ -90,10 +101,29 @@ def hello_world_pipeline():
     hello_world()
 
 
+hello_world_op = test_nb_op(
+    "hello_world_op",
+    nb_test_path("hello_world"),
+    output_defs=[],
+)
+
+
+def build_hello_world_job():
+    @job(
+        resource_defs={
+            "output_notebook_io_manager": local_output_notebook_io_manager,
+        }
+    )
+    def hello_world_job():
+        hello_world_op()
+
+    return hello_world_job
+
+
 hello_world_with_custom_tags_and_description = dagstermill.define_dagstermill_solid(
     name="hello_world_custom",
     notebook_path=nb_test_path("hello_world"),
-    output_notebook="notebook",
+    output_notebook_name="notebook",
     tags={"foo": "bar"},
     description="custom description",
 )
@@ -113,7 +143,7 @@ hello_world_config = test_nb_solid(
 goodbye_config = dagstermill.define_dagstermill_solid(
     name="goodbye_config",
     notebook_path=nb_test_path("print_dagstermill_context_solid_config"),
-    output_notebook="notebook",
+    output_notebook_name="notebook",
     config_schema={"farewell": Field(String, is_required=False, default_value="goodbye")},
 )
 
@@ -130,9 +160,9 @@ def alias_config_pipeline():
     goodbye_config.alias("aliased_goodbye")()
 
 
-@solid(input_defs=[InputDefinition("notebook", dagster_type=FileHandle)])
+@solid(input_defs=[InputDefinition("notebook")])
 def load_notebook(notebook):
-    return os.path.exists(notebook.path_desc)
+    return notebook
 
 
 @pipeline(mode_defs=default_mode_defs)
@@ -155,7 +185,6 @@ def hello_world_no_output_notebook_no_file_manager_pipeline():
 hello_world_no_output_notebook = dagstermill.define_dagstermill_solid(
     name="hello_world_no_output_notebook",
     notebook_path=nb_test_path("hello_world"),
-    required_resource_keys={"file_manager"},
 )
 
 
@@ -355,14 +384,14 @@ def filepicklelist_resource(init_context):
             resource_defs={
                 "list": ResourceDefinition(lambda _: []),
                 "io_manager": fs_io_manager,
-                "file_manager": local_file_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
             },
         ),
         ModeDefinition(
             name="prod",
             resource_defs={
                 "list": filepicklelist_resource,
-                "file_manager": local_file_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
                 "io_manager": fs_io_manager,
             },
         ),
@@ -377,7 +406,7 @@ def resource_pipeline():
         ModeDefinition(
             resource_defs={
                 "list": filepicklelist_resource,
-                "file_manager": local_file_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
                 "io_manager": fs_io_manager,
             }
         )
@@ -438,77 +467,6 @@ def failure_pipeline():
     test_nb_solid("yield_failure")()
 
 
-class ASerializationStrategy(SerializationStrategy):
-    def __init__(self, name="foo"):
-        super(ASerializationStrategy, self).__init__(name)
-        self.count = 0
-
-    def serialize(self, value, write_file_obj):
-        if self.count % 2 == 0:  # ensure two steps' serdes interleave
-            time.sleep(1)
-        write_file_obj.write(bytes(value.encode("utf-8")))
-
-    def deserialize(self, read_file_obj):
-        if self.count % 2 == 1:  # ensure two steps' serdes interleave
-            time.sleep(1)
-        return read_file_obj.read().decode("utf-8")
-
-
-ADagsterType = DagsterType(
-    name="ADagsterType",
-    type_check_fn=lambda _, value: True,
-    serialization_strategy=ASerializationStrategy(),
-)
-
-yield_something_legacy = dagstermill.define_dagstermill_solid(
-    name="yield_something_legacy",
-    notebook_path=nb_test_path("yield_something"),
-    output_notebook="notebook",
-    input_defs=[InputDefinition("obj", str)],
-    output_defs=[OutputDefinition(ADagsterType)],
-)
-
-
-@solid(input_defs=[InputDefinition("a", ADagsterType), InputDefinition("b", ADagsterType)])
-def fan_in_legacy(a, b):
-    return f"{a} {b}"
-
-
-@pipeline(
-    mode_defs=[
-        ModeDefinition(
-            resource_defs={
-                "io_manager": fs_io_manager,
-                "file_manager": local_file_manager,
-            }
-        )
-    ]
-)
-def fan_in_notebook_pipeline_legacy():
-    a, _ = yield_something_legacy.alias("solid_1")()
-    b, _ = yield_something_legacy.alias("solid_2")()
-    fan_in_legacy(a, b)
-
-
-@composite_solid
-def outer_legacy():
-    yield_something_legacy()
-
-
-@pipeline(
-    mode_defs=[
-        ModeDefinition(
-            resource_defs={
-                "io_manager": fs_io_manager,
-                "file_manager": local_file_manager,
-            }
-        )
-    ]
-)
-def composite_pipeline_legacy():
-    outer_legacy()
-
-
 yield_something = test_nb_solid(
     "yield_something",
     input_defs=[InputDefinition("obj", str)],
@@ -524,7 +482,10 @@ def fan_in(a, b):
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            resource_defs={"io_manager": fs_io_manager, "file_manager": local_file_manager}
+            resource_defs={
+                "io_manager": fs_io_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
+            }
         )
     ]
 )
@@ -538,7 +499,7 @@ def fan_in_notebook_pipeline():
     mode_defs=[
         ModeDefinition(
             resource_defs={
-                "file_manager": local_file_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
             }
         )
     ]
@@ -557,12 +518,46 @@ def outer():
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            resource_defs={"io_manager": fs_io_manager, "file_manager": local_file_manager}
+            resource_defs={
+                "io_manager": fs_io_manager,
+                "output_notebook_io_manager": local_output_notebook_io_manager,
+            }
         )
     ]
 )
 def composite_pipeline():
     outer()
+
+
+###################################################################################################
+# Back compat
+###################################################################################################
+
+hello_world_legacy = dagstermill.define_dagstermill_solid(
+    name="hello_world_legacy",
+    notebook_path=nb_test_path("hello_world"),
+    output_notebook="notebook",
+)
+
+
+@solid(input_defs=[InputDefinition("notebook", dagster_type=FileHandle)])
+def load_notebook_legacy(notebook):
+    return os.path.exists(notebook.path_desc)
+
+
+@pipeline(
+    mode_defs=[
+        ModeDefinition(
+            resource_defs={
+                "io_manager": fs_io_manager,
+                "file_manager": local_file_manager,
+            }
+        )
+    ]
+)
+def hello_world_with_output_notebook_pipeline_legacy():
+    notebook = hello_world_legacy()
+    load_notebook_legacy(notebook)
 
 
 @repository
@@ -575,6 +570,7 @@ def notebook_repo():
         hello_world_config_pipeline,
         hello_world_explicit_yield_pipeline,
         hello_world_output_pipeline,
+        hello_world_with_output_notebook_pipeline,
         hello_logging_pipeline,
         resource_pipeline,
         resource_with_exception_pipeline,
@@ -585,10 +581,10 @@ def notebook_repo():
         yield_obj_pipeline,
         retries_pipeline,
         failure_pipeline,
-        fan_in_notebook_pipeline_legacy,
         fan_in_notebook_pipeline_in_mem,
         fan_in_notebook_pipeline,
         hello_world_no_output_notebook_no_file_manager_pipeline,
+        hello_world_with_output_notebook_pipeline_legacy,
     ]
     if DAGSTER_PANDAS_PRESENT and SKLEARN_PRESENT and MATPLOTLIB_PRESENT:
         pipelines += [tutorial_pipeline]

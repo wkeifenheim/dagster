@@ -162,10 +162,6 @@ def test_0_10_0_schedule_wipe(hostname, conn_string):
                 template = template_fd.read().format(hostname=hostname)
                 target_fd.write(template)
 
-        with pytest.raises(DagsterInstanceMigrationRequired):
-            with DagsterInstance.from_config(tempdir) as instance:
-                instance.optimize_for_dagit(statement_timeout=500)
-
         with DagsterInstance.from_config(tempdir) as instance:
             instance.upgrade()
 
@@ -268,16 +264,6 @@ def test_0_12_0_add_mode_column(hostname, conn_string):
         result = execute_pipeline(noop_pipeline, instance=instance)
         assert result.success
         assert len(instance.get_runs()) == 3
-
-        runs = instance.get_runs(filters=PipelineRunsFilter(mode="default"))
-        assert len(runs) == 2
-        assert runs[0].mode == "default"
-        assert runs[1].mode == "default"
-
-        # Ensure historical runs have their mode filled post-data migration
-        runs = instance.get_runs(filters=PipelineRunsFilter(mode="the_mode"))
-        assert len(runs) == 1
-        assert runs[0].mode == "the_mode"
 
 
 def test_0_12_0_extract_asset_index_cols(hostname, conn_string):

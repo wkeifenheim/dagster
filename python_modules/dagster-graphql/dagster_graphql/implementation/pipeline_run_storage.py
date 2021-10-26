@@ -26,8 +26,8 @@ class PipelineRunObservableSubscribe:
         self.run_id = run_id
         self.observer = None
         self.state = State.NULL
-        self.load_thread = None
         self.stopping = None
+        self.stopped = None
         self.after_cursor = after_cursor if after_cursor is not None else -1
 
     def __call__(self, observer):
@@ -35,14 +35,16 @@ class PipelineRunObservableSubscribe:
         check.invariant(self.state is State.NULL, f"unexpected state {self.state}")
         chunk_size = get_chunk_size()
         events = self.instance.logs_after(self.run_id, self.after_cursor, limit=chunk_size)
+        done_loading = len(events) < chunk_size
+
         if events:
-            self.observer.on_next(events)
+            self.observer.on_next((events, not done_loading))
             self.after_cursor = len(events) + int(self.after_cursor)
 
-        if len(events) == chunk_size:
-            self.load_events()
-        else:
+        if done_loading:
             self.watch_events()
+        else:
+            self.load_events()
 
         return self
 
@@ -52,16 +54,18 @@ class PipelineRunObservableSubscribe:
         # support for gevent based dagit server
         if gevent.get_hub().gr_frame:
             self.stopping = gevent.event.Event()
-            self.load_thread = gevent.Greenlet(self.background_event_loading, gevent.sleep)
+            self.stopped = gevent.event.Event()
+            load_thread = gevent.Greenlet(self.background_event_loading, gevent.sleep)
         else:
             self.stopping = Event()
-            self.load_thread = Thread(
+            self.stopped = Event()
+            load_thread = Thread(
                 target=self.background_event_loading,
                 args=(sleep,),
                 name=f"load-events-{self.run_id}",
             )
 
-        self.load_thread.start()
+        load_thread.start()
 
     def watch_events(self):
         self.state = State.WATCHING
@@ -72,13 +76,15 @@ class PipelineRunObservableSubscribe:
 
         while not self.stopping.is_set():
             events = self.instance.logs_after(self.run_id, self.after_cursor, limit=chunk_size)
-            if not events or self.observer is None:
+            if self.observer is None:
                 break
 
-            self.observer.on_next(events)
+            done_loading = len(events) < chunk_size
+
+            self.observer.on_next((events, not done_loading))
             self.after_cursor = len(events) + int(self.after_cursor)
 
-            if len(events) < chunk_size:
+            if done_loading:
                 break
 
             sleep_fn(0)
@@ -86,6 +92,7 @@ class PipelineRunObservableSubscribe:
         if not self.stopping.is_set():
             self.watch_events()
 
+        self.stopped.set()
         return
 
     def dispose(self):
@@ -101,4 +108,4 @@ class PipelineRunObservableSubscribe:
 
     def handle_new_event(self, new_event):
         if self.observer:
-            self.observer.on_next([new_event])
+            self.observer.on_next(([new_event], False))

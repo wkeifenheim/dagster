@@ -1,10 +1,9 @@
 import {gql, useQuery} from '@apollo/client';
 import * as React from 'react';
 
-import {useFeatureFlags} from '../app/Flags';
 import {Box} from '../ui/Box';
 import {Loading} from '../ui/Loading';
-import {usePipelineSelector} from '../workspace/WorkspaceContext';
+import {isThisThingAJob, buildPipelineSelector, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 
 import {Description} from './Description';
@@ -21,8 +20,9 @@ export const SidebarPipelineOrJobOverview: React.FC<{
   repoAddress: RepoAddress;
   explorerPath: PipelineExplorerPath;
 }> = (props) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
-  const pipelineSelector = usePipelineSelector(props.repoAddress, props.explorerPath.pipelineName);
+  const {explorerPath, repoAddress} = props;
+  const {pipelineName} = explorerPath;
+  const pipelineSelector = buildPipelineSelector(repoAddress, pipelineName);
 
   const queryResult = useQuery<JobOverviewSidebarQuery, JobOverviewSidebarQueryVariables>(
     JOB_OVERVIEW_SIDEBAR_QUERY,
@@ -33,30 +33,29 @@ export const SidebarPipelineOrJobOverview: React.FC<{
     },
   );
 
+  const repo = useRepository(repoAddress);
+  const isJob = isThisThingAJob(repo, pipelineName);
+
   return (
     <Loading queryResult={queryResult}>
       {({pipelineSnapshotOrError}) => {
         if (pipelineSnapshotOrError.__typename !== 'PipelineSnapshot') {
-          return <NonIdealPipelineQueryResult result={pipelineSnapshotOrError} />;
+          return <NonIdealPipelineQueryResult isGraph={isJob} result={pipelineSnapshotOrError} />;
         }
 
-        let modes = pipelineSnapshotOrError.modes;
-
-        if (flagPipelineModeTuples) {
-          modes = modes.filter((m) => m.name === props.explorerPath.pipelineMode);
-        }
+        const modes = pipelineSnapshotOrError.modes;
 
         return (
-          <div>
+          <div style={{overflowY: 'scroll'}}>
             <SidebarSection title={'Description'}>
-              <Box padding={12}>
+              <Box padding={{vertical: 16, horizontal: 24}}>
                 <Description
                   description={pipelineSnapshotOrError.description || 'No description provided'}
                 />
               </Box>
             </SidebarSection>
             <SidebarSection title={'Resources'}>
-              <Box padding={12}>
+              <Box padding={{vertical: 16, horizontal: 24}}>
                 {modes.map((mode) => (
                   <SidebarModeSection mode={mode} key={mode.name} />
                 ))}

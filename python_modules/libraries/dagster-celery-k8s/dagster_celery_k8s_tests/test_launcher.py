@@ -25,6 +25,22 @@ from dagster_k8s.job import UserDefinedDagsterK8sConfig
 from dagster_test.test_project import get_test_project_workspace_and_external_pipeline
 
 
+def test_empty_celery_config():
+    res = _get_validated_celery_k8s_executor_config({"execution": {CELERY_K8S_CONFIG_KEY: None}})
+
+    assert res == {
+        "backend": "rpc://",
+        "retries": {"enabled": {}},
+        "image_pull_policy": "IfNotPresent",
+        "volume_mounts": [],
+        "volumes": [],
+        "load_incluster_config": True,
+        "job_namespace": "default",
+        "repo_location_name": "<<in_process>>",
+        "job_wait_timeout": DEFAULT_WAIT_TIMEOUT,
+    }
+
+
 def test_get_validated_celery_k8s_executor_config():
     res = _get_validated_celery_k8s_executor_config(
         {"execution": {CELERY_K8S_CONFIG_KEY: {"config": {"job_image": "foo"}}}}
@@ -39,6 +55,8 @@ def test_get_validated_celery_k8s_executor_config():
         "job_namespace": "default",
         "repo_location_name": "<<in_process>>",
         "job_wait_timeout": DEFAULT_WAIT_TIMEOUT,
+        "volume_mounts": [],
+        "volumes": [],
     }
 
     with pytest.raises(
@@ -67,6 +85,8 @@ def test_get_validated_celery_k8s_executor_config():
             "job_namespace": "default",
             "repo_location_name": "<<in_process>>",
             "job_wait_timeout": DEFAULT_WAIT_TIMEOUT,
+            "volume_mounts": [],
+            "volumes": [],
         }
 
     # Test setting all possible config fields
@@ -110,6 +130,8 @@ def test_get_validated_celery_k8s_executor_config():
                         "env_config_maps": [{"env": "TEST_PIPELINE_RUN_ENV_CONFIGMAP"}],
                         "env_secrets": [{"env": "TEST_SECRET"}],
                         "job_wait_timeout": DEFAULT_WAIT_TIMEOUT,
+                        "volume_mounts": [],
+                        "volumes": [],
                     }
                 }
             }
@@ -133,6 +155,8 @@ def test_get_validated_celery_k8s_executor_config():
             "env_config_maps": ["config-pipeline-env"],
             "env_secrets": ["config-secret-env"],
             "job_wait_timeout": DEFAULT_WAIT_TIMEOUT,
+            "volume_mounts": [],
+            "volumes": [],
         }
 
 

@@ -1,18 +1,19 @@
-import {Button, Dialog, Colors} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as React from 'react';
-import styled from 'styled-components/macro';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
-import {useFeatureFlags} from '../app/Flags';
 import {DISABLED_MESSAGE, usePermissions} from '../app/Permissions';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
+import {OptionsContainer} from '../gantt/VizComponents';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
-import {useQueryPersistedRunFilters} from '../runs/RunsFilter';
+import {useQueryPersistedRunFilters} from '../runs/RunsFilterInput';
 import {Box} from '../ui/Box';
+import {ButtonWIP} from '../ui/Button';
 import {CursorHistoryControls} from '../ui/CursorControls';
+import {DialogWIP} from '../ui/Dialog';
+import {IconWIP} from '../ui/Icon';
 import {Spinner} from '../ui/Spinner';
+import {Tooltip} from '../ui/Tooltip';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 
 import {PartitionGraphSet} from './PartitionGraphSet';
@@ -28,7 +29,6 @@ type PartitionSet = PipelinePartitionsRootQuery_partitionSetsOrError_PartitionSe
 
 interface PartitionViewProps {
   pipelineName: string;
-  pipelineMode: string;
   partitionSet: PartitionSet;
   partitionSets: PartitionSet[];
   onChangePartitionSet: (set: PartitionSet) => void;
@@ -37,17 +37,17 @@ interface PartitionViewProps {
 
 export const PartitionView: React.FC<PartitionViewProps> = ({
   pipelineName,
-  pipelineMode,
   partitionSet,
   partitionSets,
   onChangePartitionSet,
   repoAddress,
 }) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
   const [runTags, setRunTags] = useQueryPersistedRunFilters(RunTagsSupportedTokens);
   const [stepQuery = '', setStepQuery] = useQueryPersistedState<string>({queryKey: 'stepQuery'});
   const [showBackfillSetup, setShowBackfillSetup] = React.useState(false);
   const [blockDialog, setBlockDialog] = React.useState(false);
+  const repo = useRepository(repoAddress);
+  const isJob = isThisThingAJob(repo, pipelineName);
   const {
     loading,
     error,
@@ -56,7 +56,13 @@ export const PartitionView: React.FC<PartitionViewProps> = ({
     paginationProps,
     pageSize,
     setPageSize,
-  } = useChunkedPartitionsQuery(partitionSet.name, runTags, repoAddress);
+  } = useChunkedPartitionsQuery(
+    partitionSet.name,
+    runTags,
+    repoAddress,
+    // only query by job name if there is only one partition set
+    isJob && partitionSets.length === 1 ? pipelineName : undefined,
+  );
   const {canLaunchPartitionBackfill} = usePermissions();
   const onSubmit = React.useCallback(() => setBlockDialog(true), []);
   React.useEffect(() => {
@@ -76,38 +82,35 @@ export const PartitionView: React.FC<PartitionViewProps> = ({
     });
   });
 
-  const partitionSetsForMode = partitionSets.filter((result) => result.mode === pipelineMode);
-
   const launchButton = () => {
     if (!canLaunchPartitionBackfill) {
       return (
         <Tooltip content={DISABLED_MESSAGE}>
-          <Button style={{flexShrink: 0}} icon={IconNames.ADD} disabled>
+          <ButtonWIP icon={<IconWIP name="add_circle" />} disabled>
             Launch backfill
-          </Button>
+          </ButtonWIP>
         </Tooltip>
       );
     }
 
     return (
-      <Button
-        style={{flexShrink: 0}}
+      <ButtonWIP
         onClick={() => setShowBackfillSetup(!showBackfillSetup)}
-        icon={IconNames.ADD}
+        icon={<IconWIP name="add_circle" />}
         active={showBackfillSetup}
       >
         Launch backfill
-      </Button>
+      </ButtonWIP>
     );
   };
 
   return (
     <div>
-      <Dialog
+      <DialogWIP
         canEscapeKeyClose={!blockDialog}
         canOutsideClickClose={!blockDialog}
         onClose={() => setShowBackfillSetup(false)}
-        style={{width: 800, background: Colors.WHITE}}
+        style={{width: 800}}
         title={`Launch ${partitionSet.name} backfill`}
         isOpen={showBackfillSetup}
       >
@@ -115,6 +118,7 @@ export const PartitionView: React.FC<PartitionViewProps> = ({
           <PartitionsBackfillPartitionSelector
             partitionSetName={partitionSet.name}
             pipelineName={pipelineName}
+            onCancel={() => setShowBackfillSetup(false)}
             onLaunch={(backfillId, stepQuery) => {
               setStepQuery(stepQuery);
               setRunTags([{token: 'tag', value: `dagster/backfill=${backfillId}`}]);
@@ -124,45 +128,35 @@ export const PartitionView: React.FC<PartitionViewProps> = ({
             repoAddress={repoAddress}
           />
         )}
-      </Dialog>
-      <PartitionPagerContainer>
-        {flagPipelineModeTuples && partitionSetsForMode.length <= 1 ? null : (
-          <>
-            <PartitionSetSelector
-              selected={partitionSet}
-              partitionSets={partitionSets}
-              onSelect={onChangePartitionSet}
-            />
-            <div style={{width: 10, height: 10}} />
-          </>
-        )}
-        <Box flex={{justifyContent: 'space-between', alignItems: 'center'}} style={{flex: 1}}>
-          {launchButton()}
-          {loading && (
-            <Box
-              margin={{horizontal: 8}}
-              flex={{alignItems: 'center'}}
-              style={{overflow: 'hidden'}}
-            >
-              <Spinner purpose="body-text" value={loadingPercent} />
-              <div style={{width: 5, flexShrink: 0}} />
-              <div style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                Loading&nbsp;partitions…
-              </div>
-            </Box>
-          )}
-          <div style={{flex: 1}} />
-          <PartitionPageSizeSelector
-            value={paginationProps.hasPrevCursor ? undefined : pageSize}
-            onChange={(value) => {
-              setPageSize(value);
-              paginationProps.reset();
-            }}
+      </DialogWIP>
+      <OptionsContainer style={{gap: 12}}>
+        {partitionSets.length <= 1 ? null : (
+          <PartitionSetSelector
+            selected={partitionSet}
+            partitionSets={partitionSets}
+            onSelect={onChangePartitionSet}
           />
-          <div style={{width: 10}} />
-          <CursorHistoryControls {...paginationProps} />
-        </Box>
-      </PartitionPagerContainer>
+        )}
+        {launchButton()}
+        {loading && (
+          <Box flex={{alignItems: 'center'}} style={{overflow: 'hidden'}}>
+            <Spinner purpose="body-text" value={loadingPercent} />
+            <div style={{width: 5, flexShrink: 0}} />
+            <div style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>
+              Loading&nbsp;partitions…
+            </div>
+          </Box>
+        )}
+        <div style={{flex: 1}} />
+        <PartitionPageSizeSelector
+          value={paginationProps.hasPrevCursor ? undefined : pageSize}
+          onChange={(value) => {
+            setPageSize(value);
+            paginationProps.reset();
+          }}
+        />
+        <CursorHistoryControls {...paginationProps} />
+      </OptionsContainer>
       <div style={{position: 'relative'}}>
         <PartitionRunMatrix
           partitions={partitions}
@@ -173,21 +167,15 @@ export const PartitionView: React.FC<PartitionViewProps> = ({
           stepQuery={stepQuery}
           setStepQuery={setStepQuery}
         />
-        <PartitionGraphSet partitions={partitions} allStepKeys={Array.from(allStepKeys).sort()} />
+        <OptionsContainer>
+          <strong>Run steps</strong>
+        </OptionsContainer>
+        <PartitionGraphSet
+          isJob={isJob}
+          partitions={partitions}
+          allStepKeys={Array.from(allStepKeys).sort()}
+        />
       </div>
     </div>
   );
 };
-
-const PartitionPagerContainer = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  flex-direction: row;
-
-  @media (max-width: 1000px) {
-    flex-direction: column;
-    align-items: stretch;
-  }
-`;

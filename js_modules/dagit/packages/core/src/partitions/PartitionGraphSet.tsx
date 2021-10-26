@@ -1,29 +1,29 @@
 import {gql} from '@apollo/client';
-import {Colors} from '@blueprintjs/core';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 
 import {PartitionGraph} from './PartitionGraph';
 import {
-  PARTITION_GRAPH_FRAGMENT,
-  StepSelector,
   getPipelineDurationForRun,
-  getStepDurationsForRun,
   getPipelineExpectationFailureForRun,
-  getPipelineExpectationSuccessForRun,
   getPipelineExpectationRateForRun,
+  getPipelineExpectationSuccessForRun,
   getPipelineMaterializationCountForRun,
+  getStepDurationsForRun,
   getStepExpectationFailureForRun,
   getStepExpectationRateForRun,
   getStepExpectationSuccessForRun,
   getStepMaterializationCountForRun,
+  PARTITION_GRAPH_FRAGMENT,
+  StepSelector,
 } from './PartitionGraphUtils';
 import {PartitionGraphSetRunFragment} from './types/PartitionGraphSetRunFragment';
 
-export const PartitionGraphSet: React.FunctionComponent<{
+export const PartitionGraphSet: React.FC<{
   partitions: {name: string; runs: PartitionGraphSetRunFragment[]}[];
   allStepKeys: string[];
-}> = ({partitions, allStepKeys}) => {
+  isJob: boolean;
+}> = ({partitions, allStepKeys, isJob}) => {
   const [hiddenStepKeys, setHiddenStepKeys] = React.useState<string[]>([]);
   const durationGraph = React.useRef<any>(undefined);
   const materializationGraph = React.useRef<any>(undefined);
@@ -52,8 +52,16 @@ export const PartitionGraphSet: React.FunctionComponent<{
 
   return (
     <PartitionContentContainer>
-      <div style={{flex: 1, minWidth: 450}}>
+      <StepSelector
+        isJob={isJob}
+        all={allStepKeys}
+        hidden={hiddenStepKeys}
+        onChangeHidden={onChangeHiddenStepKeys}
+      />
+
+      <div style={{flex: 1}}>
         <PartitionGraph
+          isJob={isJob}
           title="Execution Time by Partition"
           yLabel="Execution time (secs)"
           runsByPartitionName={runsByPartitionName}
@@ -62,6 +70,7 @@ export const PartitionGraphSet: React.FunctionComponent<{
           ref={durationGraph}
         />
         <PartitionGraph
+          isJob={isJob}
           title="Materialization Count by Partition"
           yLabel="Number of materializations"
           runsByPartitionName={runsByPartitionName}
@@ -70,6 +79,7 @@ export const PartitionGraphSet: React.FunctionComponent<{
           ref={materializationGraph}
         />
         <PartitionGraph
+          isJob={isJob}
           title="Expectation Successes by Partition"
           yLabel="Number of successes"
           runsByPartitionName={runsByPartitionName}
@@ -78,6 +88,7 @@ export const PartitionGraphSet: React.FunctionComponent<{
           ref={successGraph}
         />
         <PartitionGraph
+          isJob={isJob}
           title="Expectation Failures by Partition"
           yLabel="Number of failures"
           runsByPartitionName={runsByPartitionName}
@@ -86,6 +97,7 @@ export const PartitionGraphSet: React.FunctionComponent<{
           ref={failureGraph}
         />
         <PartitionGraph
+          isJob={isJob}
           title="Expectation Rate by Partition"
           yLabel="Rate of success"
           runsByPartitionName={runsByPartitionName}
@@ -93,15 +105,6 @@ export const PartitionGraphSet: React.FunctionComponent<{
           getStepDataForRun={getStepExpectationRateForRun}
           ref={rateGraph}
         />
-      </div>
-      <div style={{width: 450}}>
-        <NavContainer>
-          <StepSelector
-            all={allStepKeys}
-            hidden={hiddenStepKeys}
-            onChangeHidden={onChangeHiddenStepKeys}
-          />
-        </NavContainer>
       </div>
     </PartitionContentContainer>
   );
@@ -118,14 +121,6 @@ export const PARTITION_GRAPH_SET_RUN_FRAGMENT = gql`
     ...PartitionGraphFragment
   }
   ${PARTITION_GRAPH_FRAGMENT}
-`;
-
-const NavContainer = styled.div`
-  margin: 20px 0 0 10px;
-  padding: 10px;
-  background-color: #fff;
-  border: 1px solid ${Colors.GRAY5};
-  overflow: auto;
 `;
 
 const PartitionContentContainer = styled.div`

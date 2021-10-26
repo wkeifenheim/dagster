@@ -4,7 +4,7 @@
 // @generated
 // This file was automatically generated and should not be edited.
 
-import { RepositorySelector, PipelineRunStatus } from "./../../types/globalTypes";
+import { RepositorySelector, RunStatus } from "./../../types/globalTypes";
 
 // ====================================================
 // GraphQL query operation: RepositoryPipelinesListQuery
@@ -21,11 +21,11 @@ export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipel
 }
 
 export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_runs {
-  __typename: "PipelineRun";
+  __typename: "Run";
   id: string;
   mode: string;
   runId: string;
-  status: PipelineRunStatus;
+  status: RunStatus;
 }
 
 export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_schedules {
@@ -35,17 +35,24 @@ export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipel
   mode: string;
 }
 
+export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_sensors_targets {
+  __typename: "Target";
+  mode: string;
+  pipelineName: string;
+}
+
 export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_sensors {
   __typename: "Sensor";
   id: string;
   name: string;
-  mode: string | null;
+  targets: RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_sensors_targets[] | null;
 }
 
 export interface RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines {
   __typename: "Pipeline";
   id: string;
   description: string | null;
+  isJob: boolean;
   name: string;
   modes: RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_modes[];
   runs: RepositoryPipelinesListQuery_repositoryOrError_Repository_pipelines_runs[];

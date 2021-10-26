@@ -82,11 +82,11 @@ def main(quiet):
         "-e python_modules/libraries/dagster-slack",
         "-e python_modules/libraries/dagster-ssh",
         "-e python_modules/libraries/dagster-twilio",
-        "-e python_modules/libraries/lakehouse",
         "-e python_modules/libraries/dagster-airflow",
         "-e integration_tests/python_modules/dagster-k8s-test-infra",
         "-r scala_modules/scripts/requirements.txt",
         "-e python_modules/libraries/dagster-azure",
+        "-e python_modules/libraries/dagster-msteams",
         "-e helm/dagster/schema[test]",
     ]
 

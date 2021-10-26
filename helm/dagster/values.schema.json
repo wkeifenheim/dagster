@@ -713,6 +713,24 @@
                 "startupProbe"
             ]
         },
+        "IngressTLSConfiguration": {
+            "title": "IngressTLSConfiguration",
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "title": "Enabled",
+                    "type": "boolean"
+                },
+                "secretName": {
+                    "title": "Secretname",
+                    "type": "string"
+                }
+            },
+            "required": [
+                "enabled",
+                "secretName"
+            ]
+        },
         "IngressPath": {
             "title": "IngressPath",
             "type": "object",
@@ -751,38 +769,12 @@
                     "title": "Host",
                     "type": "string"
                 },
-                "precedingPaths": {
-                    "title": "Precedingpaths",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/IngressPath"
-                    }
-                },
-                "succeedingPaths": {
-                    "title": "Succeedingpaths",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/IngressPath"
-                    }
-                }
-            },
-            "required": [
-                "host",
-                "precedingPaths",
-                "succeedingPaths"
-            ]
-        },
-        "FlowerIngressConfiguration": {
-            "title": "FlowerIngressConfiguration",
-            "type": "object",
-            "properties": {
-                "host": {
-                    "title": "Host",
-                    "type": "string"
-                },
                 "path": {
                     "title": "Path",
                     "type": "string"
+                },
+                "tls": {
+                    "$ref": "#/definitions/IngressTLSConfiguration"
                 },
                 "precedingPaths": {
                     "title": "Precedingpaths",
@@ -802,6 +794,45 @@
             "required": [
                 "host",
                 "path",
+                "tls",
+                "precedingPaths",
+                "succeedingPaths"
+            ]
+        },
+        "FlowerIngressConfiguration": {
+            "title": "FlowerIngressConfiguration",
+            "type": "object",
+            "properties": {
+                "host": {
+                    "title": "Host",
+                    "type": "string"
+                },
+                "path": {
+                    "title": "Path",
+                    "type": "string"
+                },
+                "tls": {
+                    "$ref": "#/definitions/IngressTLSConfiguration"
+                },
+                "precedingPaths": {
+                    "title": "Precedingpaths",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/IngressPath"
+                    }
+                },
+                "succeedingPaths": {
+                    "title": "Succeedingpaths",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/IngressPath"
+                    }
+                }
+            },
+            "required": [
+                "host",
+                "path",
+                "tls",
                 "precedingPaths",
                 "succeedingPaths"
             ]
@@ -971,6 +1002,20 @@
                 },
                 "prefix": {
                     "title": "Prefix",
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "$ref": "#/definitions/Source"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "jsonCredentialsEnvvar": {
+                    "title": "Jsoncredentialsenvvar",
                     "anyOf": [
                         {
                             "type": "string"
@@ -1377,6 +1422,31 @@
                             "type": "null"
                         }
                     ]
+                },
+                "configSource": {
+                    "title": "Configsource",
+                    "anyOf": [
+                        {
+                            "type": "object"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "additionalCeleryArgs": {
+                    "title": "Additionalceleryargs",
+                    "items": {
+                        "type": "string"
+                    },
+                    "anyOf": [
+                        {
+                            "type": "array"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
                 }
             },
             "required": [
@@ -1473,6 +1543,18 @@
             ],
             "additionalProperties": false
         },
+        "VolumeMount": {
+            "title": "VolumeMount",
+            "type": "object",
+            "properties": {},
+            "$ref": "https://kubernetesjsonschema.dev/v1.15.0/_definitions.json#/definitions/io.k8s.api.core.v1.VolumeMount"
+        },
+        "Volume": {
+            "title": "Volume",
+            "type": "object",
+            "properties": {},
+            "$ref": "https://kubernetesjsonschema.dev/v1.15.0/_definitions.json#/definitions/io.k8s.api.core.v1.Volume"
+        },
         "K8sRunLauncherConfig": {
             "title": "K8sRunLauncherConfig",
             "type": "object",
@@ -1537,6 +1619,20 @@
                     "items": {
                         "type": "string"
                     }
+                },
+                "volumeMounts": {
+                    "title": "Volumemounts",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/VolumeMount"
+                    }
+                },
+                "volumes": {
+                    "title": "Volumes",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/Volume"
+                    }
                 }
             },
             "required": [
@@ -1544,7 +1640,9 @@
                 "loadInclusterConfig",
                 "envConfigMaps",
                 "envSecrets",
-                "envVars"
+                "envVars",
+                "volumeMounts",
+                "volumes"
             ],
             "additionalProperties": false
         },
@@ -1669,6 +1767,20 @@
             ],
             "type": "string"
         },
+        "TagConcurrencyLimitConfig": {
+            "title": "TagConcurrencyLimitConfig",
+            "type": "object",
+            "properties": {
+                "applyLimitPerUniqueValue": {
+                    "title": "Applylimitperuniquevalue",
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "applyLimitPerUniqueValue"
+            ],
+            "additionalProperties": false
+        },
         "TagConcurrencyLimit": {
             "title": "TagConcurrencyLimit",
             "type": "object",
@@ -1682,6 +1794,9 @@
                     "anyOf": [
                         {
                             "type": "string"
+                        },
+                        {
+                            "$ref": "#/definitions/TagConcurrencyLimitConfig"
                         },
                         {
                             "type": "null"

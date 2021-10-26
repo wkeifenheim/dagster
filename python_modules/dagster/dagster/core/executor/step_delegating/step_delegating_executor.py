@@ -3,17 +3,16 @@ from typing import Dict, List, Optional, cast
 
 import pendulum
 from dagster import check
-from dagster.core.events import DagsterEvent, EngineEventData, log_step_event
+from dagster.core.events import DagsterEvent, EngineEventData, EventMetadataEntry, log_step_event
 from dagster.core.execution.context.system import PlanOrchestrationContext
 from dagster.core.execution.plan.plan import ExecutionPlan
 from dagster.core.execution.plan.step import ExecutionStep
 from dagster.core.execution.retries import RetryMode
-from dagster.core.executor.step_delegating.step_handler.base import StepHandlerContext
+from dagster.core.executor.step_delegating.step_handler.base import StepHandler, StepHandlerContext
 from dagster.grpc.types import ExecuteStepArgs
 from dagster.utils.backcompat import experimental
 
 from ..base import Executor
-from .step_handler import StepHandler
 
 
 @experimental
@@ -21,7 +20,7 @@ class StepDelegatingExecutor(Executor):
     def __init__(
         self,
         step_handler: StepHandler,
-        retries: RetryMode = RetryMode.DISABLED,
+        retries: RetryMode,
         sleep_seconds: Optional[float] = None,
         check_step_health_interval_seconds: Optional[int] = None,
     ):
@@ -50,12 +49,12 @@ class StepDelegatingExecutor(Executor):
         self, pipeline_context, steps, active_execution
     ) -> StepHandlerContext:
         return StepHandlerContext(
-            instance=pipeline_context.plan_data.instance,
+            instance=pipeline_context.instance,
             execute_step_args=ExecuteStepArgs(
                 pipeline_origin=pipeline_context.reconstructable_pipeline.get_python_origin(),
                 pipeline_run_id=pipeline_context.pipeline_run.run_id,
                 step_keys_to_execute=[step.key for step in steps],
-                instance_ref=pipeline_context.plan_data.instance.get_ref(),
+                instance_ref=pipeline_context.instance.get_ref(),
                 retry_mode=self.retries,
                 known_state=active_execution.get_known_state(),
             ),
@@ -86,52 +85,69 @@ class StepDelegatingExecutor(Executor):
         )
 
         with execution_plan.start(retry_mode=self.retries) as active_execution:
-            stopping = False
             running_steps: Dict[str, ExecutionStep] = {}
 
+            if pipeline_context.resume_from_failure:
+                yield DagsterEvent.engine_event(
+                    pipeline_context,
+                    "Resuming execution from failure",
+                    EngineEventData(),
+                )
+
+                events = self._pop_events(
+                    pipeline_context.instance,
+                    pipeline_context.run_id,
+                )
+                for dagster_event in events:
+                    yield dagster_event
+
+                possibly_in_flight_steps = active_execution.rebuild_from_events(events)
+                for step in possibly_in_flight_steps:
+
+                    yield DagsterEvent.engine_event(
+                        pipeline_context,
+                        "Checking on status of possibly launched steps",
+                        EngineEventData(),
+                        step.handle,
+                    )
+
+                    # TODO: check if failure event included. For now, hacky assumption that
+                    # we don't log anything on successful check
+                    if self._step_handler.check_step_health(
+                        self._get_step_handler_context(pipeline_context, [step], active_execution)
+                    ):
+                        # health check failed, launch the step
+                        launch_events = self._log_new_events(
+                            self._step_handler.launch_step(
+                                self._get_step_handler_context(
+                                    pipeline_context, [step], active_execution
+                                )
+                            ),
+                            pipeline_context,
+                            {step.key: step for step in possibly_in_flight_steps},
+                        )
+                        for dagster_event in launch_events:
+                            yield dagster_event
+                            active_execution.handle_event(dagster_event)
+
+                    running_steps[step.key] = step
+
             last_check_step_health_time = pendulum.now("UTC")
-            while (not active_execution.is_complete and not stopping) or running_steps:
+            while not active_execution.is_complete:
                 events = []
 
                 if active_execution.check_for_interrupts():
-                    yield DagsterEvent.engine_event(
-                        pipeline_context,
-                        "Executor received termination signal, forwarding to steps",
-                        EngineEventData.interrupted(list(running_steps.keys())),
-                    )
-                    stopping = True
-                    active_execution.mark_interrupted()
-                    for _, step in running_steps.items():
-                        events.extend(
-                            self._log_new_events(
-                                self._step_handler.terminate_step(
-                                    self._get_step_handler_context(
-                                        pipeline_context, [step], active_execution
-                                    )
-                                ),
-                                pipeline_context,
-                                running_steps,
-                            )
+                    if not pipeline_context.instance.run_will_resume(pipeline_context.run_id):
+                        yield DagsterEvent.engine_event(
+                            pipeline_context,
+                            "Executor received termination signal, forwarding to steps",
+                            EngineEventData.interrupted(list(running_steps.keys())),
                         )
-                    running_steps.clear()
-
-                events.extend(
-                    self._pop_events(
-                        pipeline_context.plan_data.instance,
-                        pipeline_context.plan_data.pipeline_run.run_id,
-                    )
-                )
-
-                if not stopping:
-                    curr_time = pendulum.now("UTC")
-                    if (
-                        curr_time - last_check_step_health_time
-                    ).total_seconds() >= self._check_step_health_interval_seconds:
-                        last_check_step_health_time = curr_time
+                        active_execution.mark_interrupted()
                         for _, step in running_steps.items():
                             events.extend(
                                 self._log_new_events(
-                                    self._step_handler.check_step_health(
+                                    self._step_handler.terminate_step(
                                         self._get_step_handler_context(
                                             pipeline_context, [step], active_execution
                                         )
@@ -140,12 +156,39 @@ class StepDelegatingExecutor(Executor):
                                     running_steps,
                                 )
                             )
+                    else:
+                        yield DagsterEvent.engine_event(
+                            pipeline_context,
+                            "Executor received termination signal, not forwarding to steps because "
+                            "run will be resumed",
+                            EngineEventData(
+                                metadata_entries=[
+                                    EventMetadataEntry.text(
+                                        str(running_steps.keys()), "steps_in_flight"
+                                    )
+                                ]
+                            ),
+                        )
+                        active_execution.mark_interrupted()
 
-                    for step in active_execution.get_steps_to_execute():
-                        running_steps[step.key] = step
+                    return
+
+                events.extend(
+                    self._pop_events(
+                        pipeline_context.instance,
+                        pipeline_context.run_id,
+                    )
+                )
+
+                curr_time = pendulum.now("UTC")
+                if (
+                    curr_time - last_check_step_health_time
+                ).total_seconds() >= self._check_step_health_interval_seconds:
+                    last_check_step_health_time = curr_time
+                    for _, step in running_steps.items():
                         events.extend(
                             self._log_new_events(
-                                self._step_handler.launch_step(
+                                self._step_handler.check_step_health(
                                     self._get_step_handler_context(
                                         pipeline_context, [step], active_execution
                                     )
@@ -155,7 +198,21 @@ class StepDelegatingExecutor(Executor):
                             )
                         )
 
-                for dagster_event in events:
+                for step in active_execution.get_steps_to_execute():
+                    running_steps[step.key] = step
+                    events.extend(
+                        self._log_new_events(
+                            self._step_handler.launch_step(
+                                self._get_step_handler_context(
+                                    pipeline_context, [step], active_execution
+                                )
+                            ),
+                            pipeline_context,
+                            running_steps,
+                        )
+                    )
+
+                for dagster_event in events:  # type: ignore
                     yield dagster_event
                     active_execution.handle_event(dagster_event)
 

@@ -1,6 +1,3 @@
-import {Colors, Icon} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
@@ -8,8 +5,12 @@ import {TickTag} from '../instigation/InstigationTick';
 import {InstigatedRunStatus} from '../instigation/InstigationUtils';
 import {PipelineReference} from '../pipelines/PipelineReference';
 import {InstigationType} from '../types/globalTypes';
-import {Group} from '../ui/Group';
+import {Box} from '../ui/Box';
+import {ColorsWIP} from '../ui/Colors';
+import {IconWIP} from '../ui/Icon';
 import {Table} from '../ui/Table';
+import {Tooltip} from '../ui/Tooltip';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
@@ -32,28 +33,20 @@ export const SensorsTable: React.FC<{
           <th>Sensor Name</th>
           <th style={{width: '150px'}}>Frequency</th>
           <th style={{width: '120px'}}>
-            <Group direction="row" spacing={8} alignItems="center">
+            <Box flex={{gap: 8, alignItems: 'end'}}>
               Last tick
               <Tooltip position="top" content={lastTick}>
-                <Icon
-                  icon={IconNames.INFO_SIGN}
-                  iconSize={12}
-                  style={{position: 'relative', top: '-2px'}}
-                />
+                <IconWIP name="info" color={ColorsWIP.Gray500} />
               </Tooltip>
-            </Group>
+            </Box>
           </th>
           <th>
-            <Group direction="row" spacing={8} alignItems="center">
+            <Box flex={{gap: 8, alignItems: 'end'}}>
               Last Run
               <Tooltip position="top" content={lastRun}>
-                <Icon
-                  icon={IconNames.INFO_SIGN}
-                  iconSize={12}
-                  style={{position: 'relative', top: '-2px'}}
-                />
+                <IconWIP name="info" color={ColorsWIP.Gray500} />
               </Tooltip>
-            </Group>
+            </Box>
           </th>
         </tr>
       </thead>
@@ -70,7 +63,8 @@ const SensorRow: React.FC<{
   repoAddress: RepoAddress;
   sensor: SensorFragment;
 }> = ({repoAddress, sensor}) => {
-  const {name, mode, pipelineName, sensorState} = sensor;
+  const repo = useRepository(repoAddress);
+  const {name, sensorState} = sensor;
   const {ticks} = sensorState;
   const latestTick = ticks.length ? ticks[0] : null;
 
@@ -80,27 +74,32 @@ const SensorRow: React.FC<{
         <SensorSwitch repoAddress={repoAddress} sensor={sensor} />
       </td>
       <td>
-        <Group direction="column" spacing={4}>
+        <Box flex={{direction: 'column', gap: 4}}>
           <span style={{fontWeight: 500}}>
             <Link to={workspacePathFromAddress(repoAddress, `/sensors/${name}`)}>{name}</Link>
           </span>
-          {pipelineName && mode !== null && (
-            <PipelineReference
-              showIcon
-              fontSize={13}
-              pipelineName={pipelineName}
-              pipelineHrefContext={repoAddress}
-              mode={mode}
-            />
-          )}
-        </Group>
+          {sensor.targets && sensor.targets.length ? (
+            <Box flex={{direction: 'column', gap: 2}}>
+              {sensor.targets.map((target) => (
+                <PipelineReference
+                  key={target.pipelineName}
+                  showIcon
+                  size="small"
+                  pipelineName={target.pipelineName}
+                  pipelineHrefContext={repoAddress}
+                  isJob={!!(repo && isThisThingAJob(repo, target.pipelineName))}
+                />
+              ))}
+            </Box>
+          ) : null}
+        </Box>
       </td>
       <td>{humanizeSensorInterval(sensor.minIntervalSeconds)}</td>
       <td>
         {latestTick ? (
           <TickTag tick={latestTick} instigationType={InstigationType.SENSOR} />
         ) : (
-          <span style={{color: Colors.GRAY4}}>None</span>
+          <span style={{color: ColorsWIP.Gray300}}>None</span>
         )}
       </td>
       <td>

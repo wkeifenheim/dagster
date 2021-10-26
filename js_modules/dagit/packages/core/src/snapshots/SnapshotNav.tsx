@@ -1,12 +1,11 @@
 import {gql, useQuery} from '@apollo/client';
-import {Tag, Colors, Tab, Tabs} from '@blueprintjs/core';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
 import {explorerPathToString, PipelineExplorerPath} from '../pipelines/PipelinePathUtils';
-import {Box} from '../ui/Box';
-import {Group} from '../ui/Group';
 import {PageHeader} from '../ui/PageHeader';
+import {Tab, Tabs} from '../ui/Tabs';
+import {TagWIP} from '../ui/TagWIP';
 import {Heading} from '../ui/Text';
 import {FontFamily} from '../ui/styles';
 import {useActivePipelineForName} from '../workspace/WorkspaceContext';
@@ -39,6 +38,7 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
   });
 
   const currentPipelineState = useActivePipelineForName(pipelineName);
+  const isJob = !!currentPipelineState?.isJob;
   const currentSnapshotID = currentPipelineState?.pipelineSnapshotId;
 
   const {data, loading} = useQuery<SnapshotQuery>(SNAPSHOT_PARENT_QUERY, {
@@ -48,9 +48,9 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
   const tag = () => {
     if (loading) {
       return (
-        <Tag intent="none" minimal>
+        <TagWIP intent="none" minimal>
           ...
-        </Tag>
+        </TagWIP>
       );
     }
 
@@ -61,16 +61,16 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
         data?.pipelineSnapshotOrError?.parentSnapshotId !== currentSnapshotID)
     ) {
       return (
-        <Tag intent="warning" minimal>
+        <TagWIP intent="warning" minimal>
           Snapshot
-        </Tag>
+        </TagWIP>
       );
     }
 
     return (
-      <Tag intent="success" minimal>
+      <TagWIP intent="success" minimal>
         Current
-      </Tag>
+      </TagWIP>
     );
   };
 
@@ -88,39 +88,31 @@ export const SnapshotNav = (props: SnapshotNavProps) => {
   ];
 
   return (
-    <Group direction="column" spacing={12} padding={{top: 20, horizontal: 20}}>
-      <PageHeader
-        title={
-          <Group direction="row" spacing={12} alignItems="flex-end">
-            <Heading style={{fontFamily: FontFamily.monospace}}>
-              {explorerPath.snapshotId?.slice(0, 8)}
-            </Heading>
-            {tag()}
-          </Group>
-        }
-        icon="diagram-tree"
-        description={
-          <span>
+    <PageHeader
+      title={
+        <Heading style={{fontFamily: FontFamily.monospace, fontSize: '20px'}}>
+          {explorerPath.snapshotId?.slice(0, 8)}
+        </Heading>
+      }
+      tags={
+        <>
+          <TagWIP icon="schema">
             Snapshot of{' '}
-            <Link
-              to={workspacePipelinePathGuessRepo(
-                explorerPath.pipelineName,
-                explorerPath.pipelineMode,
-              )}
-            >
+            <Link to={workspacePipelinePathGuessRepo(explorerPath.pipelineName, isJob)}>
               {explorerPath.pipelineName}
             </Link>
-          </span>
-        }
-      />
-      <Box border={{side: 'bottom', width: 1, color: Colors.LIGHT_GRAY3}}>
-        <Tabs large={false} selectedTabId={activeTab}>
+          </TagWIP>
+          {tag()}
+        </>
+      }
+      tabs={
+        <Tabs selectedTabId={activeTab}>
           {tabs.map((tab) => {
             const {href, text, pathComponent} = tab;
-            return <Tab key={text} id={pathComponent} title={<Link to={href}>{text}</Link>} />;
+            return <Tab key={text} id={pathComponent} title={text} to={href} />;
           })}
         </Tabs>
-      </Box>
-    </Group>
+      }
+    />
   );
 };

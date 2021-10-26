@@ -1,8 +1,9 @@
-import {Colors, Icon} from '@blueprintjs/core';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {useFeatureFlags} from '../app/Flags';
+import {Box} from '../ui/Box';
+import {ColorsWIP} from '../ui/Colors';
+import {IconWIP} from '../ui/Icon';
 import {RepoAddress} from '../workspace/types';
 import {workspacePipelinePath, workspacePipelinePathGuessRepo} from '../workspace/workspacePath';
 
@@ -11,69 +12,52 @@ import {PipelineSnapshotLink} from './PipelinePathUtils';
 interface Props {
   pipelineName: string;
   pipelineHrefContext: 'repo-unknown' | RepoAddress | 'no-link';
+  isJob: boolean;
   snapshotId?: string | null;
-  mode: string;
   showIcon?: boolean;
-  fontSize?: number;
+  size?: 'small' | 'normal';
 }
 
 export const PipelineReference: React.FC<Props> = ({
   pipelineName,
   pipelineHrefContext,
-  mode,
+  isJob,
   snapshotId,
   showIcon,
-  fontSize,
+  size = 'normal',
 }) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
-
-  const modeLabel =
-    mode === 'default' ? null : <span style={{color: Colors.GRAY3}}>{`: ${mode}`}</span>;
-
   const pipeline =
     pipelineHrefContext === 'repo-unknown' ? (
-      <Link to={workspacePipelinePathGuessRepo(pipelineName, mode)}>
-        {pipelineName}
-        {modeLabel}
-      </Link>
+      <Link to={workspacePipelinePathGuessRepo(pipelineName, isJob)}>{pipelineName}</Link>
     ) : pipelineHrefContext === 'no-link' ? (
-      <>
-        {pipelineName}
-        {modeLabel}
-      </>
+      <>{pipelineName}</>
     ) : (
       <Link
-        to={workspacePipelinePath(
-          pipelineHrefContext.name,
-          pipelineHrefContext.location,
+        to={workspacePipelinePath({
+          repoName: pipelineHrefContext.name,
+          repoLocation: pipelineHrefContext.location,
           pipelineName,
-          mode,
-        )}
+          isJob,
+        })}
       >
         {pipelineName}
-        {modeLabel}
       </Link>
     );
 
   return (
-    <span style={{fontSize: fontSize}}>
+    <Box flex={{direction: 'row', alignItems: 'center', display: 'inline-flex'}}>
       {showIcon && (
-        <Icon
-          color={Colors.GRAY2}
-          icon={flagPipelineModeTuples ? 'send-to-graph' : 'diagram-tree'}
-          iconSize={Math.floor((fontSize || 16) * 0.8)}
-          style={{position: 'relative', top: -2, paddingRight: 5}}
-        />
+        <Box margin={{right: 8}}>
+          <IconWIP color={ColorsWIP.Gray400} name={'job'} />
+        </Box>
       )}
-      {pipeline}
-      {snapshotId && ' @ '}
-      {snapshotId && (
-        <PipelineSnapshotLink
-          snapshotId={snapshotId}
-          pipelineName={pipelineName}
-          pipelineMode={mode}
-        />
-      )}
-    </span>
+      <span>
+        {pipeline}
+        {snapshotId && ' @ '}
+        {snapshotId && (
+          <PipelineSnapshotLink snapshotId={snapshotId} pipelineName={pipelineName} size={size} />
+        )}
+      </span>
+    </Box>
   );
 };

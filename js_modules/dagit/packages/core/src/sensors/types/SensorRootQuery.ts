@@ -4,7 +4,7 @@
 // @generated
 // This file was automatically generated and should not be edited.
 
-import { SensorSelector, InstigationType, InstigationStatus, PipelineRunStatus, InstigationTickStatus } from "./../../types/globalTypes";
+import { SensorSelector, InstigationType, InstigationStatus, RunStatus, InstigationTickStatus } from "./../../types/globalTypes";
 
 // ====================================================
 // GraphQL query operation: SensorRootQuery
@@ -46,10 +46,10 @@ export interface SensorRootQuery_sensorOrError_Sensor_sensorState_typeSpecificDa
 export type SensorRootQuery_sensorOrError_Sensor_sensorState_typeSpecificData = SensorRootQuery_sensorOrError_Sensor_sensorState_typeSpecificData_SensorData | SensorRootQuery_sensorOrError_Sensor_sensorState_typeSpecificData_ScheduleData;
 
 export interface SensorRootQuery_sensorOrError_Sensor_sensorState_runs {
-  __typename: "PipelineRun";
+  __typename: "Run";
   id: string;
   runId: string;
-  status: PipelineRunStatus;
+  status: RunStatus;
 }
 
 export interface SensorRootQuery_sensorOrError_Sensor_sensorState_ticks_error_cause {
@@ -88,18 +88,23 @@ export interface SensorRootQuery_sensorOrError_Sensor_sensorState {
   runningCount: number;
 }
 
+export interface SensorRootQuery_sensorOrError_Sensor_targets {
+  __typename: "Target";
+  pipelineName: string;
+  solidSelection: string[] | null;
+  mode: string;
+}
+
 export interface SensorRootQuery_sensorOrError_Sensor {
   __typename: "Sensor";
   id: string;
   jobOriginId: string;
   name: string;
-  pipelineName: string | null;
-  solidSelection: (string | null)[] | null;
-  mode: string | null;
   description: string | null;
   minIntervalSeconds: number;
   nextTick: SensorRootQuery_sensorOrError_Sensor_nextTick | null;
   sensorState: SensorRootQuery_sensorOrError_Sensor_sensorState;
+  targets: SensorRootQuery_sensorOrError_Sensor_targets[] | null;
 }
 
 export type SensorRootQuery_sensorOrError = SensorRootQuery_sensorOrError_SensorNotFoundError | SensorRootQuery_sensorOrError_Sensor;

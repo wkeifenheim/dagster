@@ -1,12 +1,11 @@
 import {gql} from '@apollo/client';
-import {Colors, NonIdealState} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
 import * as React from 'react';
 import * as ReactDOM from 'react-dom';
 import {CellMeasurer, CellMeasurerCache, List, ListRowProps, ScrollParams} from 'react-virtualized';
 import styled from 'styled-components/macro';
 
-import {Spinner} from '../ui/Spinner';
+import {ColorsWIP} from '../ui/Colors';
+import {NonIdealState} from '../ui/NonIdealState';
 
 import {LogFilter, LogsProviderLogs} from './LogsProvider';
 import {
@@ -17,7 +16,10 @@ import {
 } from './LogsRow';
 import {ColumnWidthsProvider, Headers} from './LogsScrollingTableHeader';
 import {IRunMetadataDict} from './RunMetadataProvider';
-import {RunPipelineRunEventFragment} from './types/RunPipelineRunEventFragment';
+import {eventTypeToDisplayType} from './getRunFilterProviders';
+import {RunDagsterRunEventFragment} from './types/RunDagsterRunEventFragment';
+
+const LOGS_PADDING_BOTTOM = 50;
 
 interface ILogsScrollingTableProps {
   logs: LogsProviderLogs;
@@ -36,8 +38,8 @@ interface ILogsScrollingTableSizedProps {
   width: number;
   height: number;
 
-  filteredNodes: (RunPipelineRunEventFragment & {clientsideKey: string})[];
-  textMatchNodes: (RunPipelineRunEventFragment & {clientsideKey: string})[];
+  filteredNodes: (RunDagsterRunEventFragment & {clientsideKey: string})[];
+  textMatchNodes: (RunDagsterRunEventFragment & {clientsideKey: string})[];
 
   filterKey: string;
   loading: boolean;
@@ -71,7 +73,7 @@ function filterLogs(logs: LogsProviderLogs, filter: LogFilter, filterStepKeys: s
               return node.stepKey && node.stepKey === f.value;
             }
             if (f.token === 'type') {
-              return node.eventType === f.value;
+              return node.eventType && f.value === eventTypeToDisplayType(node.eventType);
             }
             return node.message.toLowerCase().includes(f.value.toLowerCase());
           })
@@ -92,7 +94,7 @@ export const LogsScrollingTable: React.FC<ILogsScrollingTableProps> = (props) =>
   return (
     <ColumnWidthsProvider onWidthsChanged={() => table.current && table.current.didResize()}>
       <Headers />
-      <div style={{flex: 1, minHeight: 0}}>
+      <div style={{flex: 1, minHeight: 0, marginTop: -1}}>
         <AutoSizer>
           {({width, height}) => (
             <LogsScrollingTableSized
@@ -113,7 +115,7 @@ export const LogsScrollingTable: React.FC<ILogsScrollingTableProps> = (props) =>
 };
 
 export const LOGS_SCROLLING_TABLE_MESSAGE_FRAGMENT = gql`
-  fragment LogsScrollingTableMessageFragment on PipelineRunEvent {
+  fragment LogsScrollingTableMessageFragment on DagsterRunEvent {
     __typename
     ...LogsRowStructuredFragment
     ...LogsRowUnstructuredFragment
@@ -221,7 +223,12 @@ class LogsScrollingTableSized extends React.Component<ILogsScrollingTableSizedPr
 
   onScroll = ({scrollTop, scrollHeight, clientHeight}: ScrollParams) => {
     const atTopAndStarting = scrollTop === 0 && scrollHeight <= clientHeight;
-    const atBottom = Math.abs(scrollTop - (scrollHeight - clientHeight)) < 5;
+
+    // Note: The distance to the bottom can go negative if you scroll into the padding at the bottom of the list.
+    // react-virtualized seems to be faking these numbers (they're different than what you get if you inspect the el)
+    const distanceToBottom = scrollHeight - clientHeight - scrollTop;
+    const atBottom = distanceToBottom < 5;
+
     this.isAtBottomOrZero = atTopAndStarting || atBottom;
   };
 
@@ -273,7 +280,7 @@ class LogsScrollingTableSized extends React.Component<ILogsScrollingTableSizedPr
     const isLastRow = index === this.props.filteredNodes.length - 1;
     const lastRowStyles = isLastRow
       ? {
-          borderBottom: `1px solid ${Colors.LIGHT_GRAY3}`,
+          borderBottom: `1px solid ${ColorsWIP.Gray100}`,
         }
       : {};
 
@@ -299,7 +306,7 @@ class LogsScrollingTableSized extends React.Component<ILogsScrollingTableSizedPr
 
   noContentRenderer = () => {
     if (this.props.filteredNodes) {
-      return <NonIdealState icon={IconNames.CONSOLE} title="No logs to display" />;
+      return <NonIdealState icon="no-results" title="No logs to display" />;
     }
     return <span />;
   };
@@ -308,11 +315,11 @@ class LogsScrollingTableSized extends React.Component<ILogsScrollingTableSizedPr
     const {filteredNodes, height, loading, width} = this.props;
     return (
       <div>
-        {loading && (
+        {loading ? (
           <ListEmptyState>
-            <NonIdealState icon={<Spinner purpose="section" />} title="Fetching logs..." />
+            <NonIdealState icon="spinner" title="Fetching logs..." />
           </ListEmptyState>
-        )}
+        ) : null}
         <List
           ref={this.list}
           deferredMeasurementCache={this.cache}
@@ -323,7 +330,7 @@ class LogsScrollingTableSized extends React.Component<ILogsScrollingTableSizedPr
           width={width}
           height={height}
           overscanRowCount={10}
-          style={{paddingBottom: 50}}
+          style={{paddingBottom: LOGS_PADDING_BOTTOM}}
           onScroll={this.onScroll}
         />
       </div>
@@ -385,6 +392,7 @@ class AutoSizer extends React.Component<{
 }
 
 const ListEmptyState = styled.div`
+  background-color: rgba(255, 255, 255, 0.7);
   z-index: 100;
   position: absolute;
   width: 100%;

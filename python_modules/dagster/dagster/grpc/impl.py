@@ -65,7 +65,7 @@ def _report_run_failed_if_not_finished(instance, pipeline_run_id):
         yield instance.report_run_failed(pipeline_run)
 
 
-def core_execute_run(recon_pipeline, pipeline_run, instance):
+def core_execute_run(recon_pipeline, pipeline_run, instance, resume_from_failure=False):
     check.inst_param(recon_pipeline, "recon_pipeline", ReconstructablePipeline)
     check.inst_param(pipeline_run, "pipeline_run", PipelineRun)
     check.inst_param(instance, "instance", DagsterInstance)
@@ -83,11 +83,13 @@ def core_execute_run(recon_pipeline, pipeline_run, instance):
         return
 
     try:
-        yield from execute_run_iterator(recon_pipeline, pipeline_run, instance)
+        yield from execute_run_iterator(
+            recon_pipeline, pipeline_run, instance, resume_from_failure=resume_from_failure
+        )
     except (KeyboardInterrupt, DagsterExecutionInterruptedError):
         yield from _report_run_failed_if_not_finished(instance, pipeline_run.run_id)
         yield instance.report_engine_event(
-            message="Pipeline execution terminated by interrupt",
+            message="Run execution terminated by interrupt",
             pipeline_run=pipeline_run,
         )
     except Exception:  # pylint: disable=broad-except
@@ -144,7 +146,7 @@ def _run_in_subprocess(
 
     run_event_handler(
         instance.report_engine_event(
-            "Started process for pipeline (pid: {pid}).".format(pid=pid),
+            "Started process for run (pid: {pid}).".format(pid=pid),
             pipeline_run,
             EngineEventData.in_process(pid, marker_end="cli_api_subprocess_init"),
         )
@@ -163,7 +165,7 @@ def _run_in_subprocess(
         if not closed:
             run_event_handler(
                 instance.report_engine_event(
-                    "Process for pipeline exited (pid: {pid}).".format(pid=pid),
+                    "Process for run exited (pid: {pid}).".format(pid=pid),
                     pipeline_run,
                 )
             )

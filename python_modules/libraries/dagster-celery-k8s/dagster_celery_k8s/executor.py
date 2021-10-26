@@ -70,13 +70,11 @@ def celery_k8s_job_executor(init_context):
 
     In the most common case, you may want to modify the ``broker`` and ``backend`` (e.g., to use
     Redis instead of RabbitMQ). We expect that ``config_source`` will be less frequently
-    modified, but that when solid executions are especially fast or slow, or when there are
-    different requirements around idempotence or retry, it may make sense to execute pipelines
+    modified, but that when op executions are especially fast or slow, or when there are
+    different requirements around idempotence or retry, it may make sense to execute dagster jobs
     with variations on these settings.
 
-    If you'd like to configure a Celery Kubernetes Job executor in addition to the
-    :py:class:`~dagster.default_executors`, you should add it to the ``executor_defs`` defined on a
-    :py:class:`~dagster.ModeDefinition` as follows:
+    To use the `celery_k8s_job_executor`, set it as the `executor_def` when defining a job:
 
     .. literalinclude:: ../../../../../../python_modules/libraries/dagster-celery-k8s/dagster_celery_k8s_tests/example_celery_mode_def.py
        :language: python
@@ -86,16 +84,15 @@ def celery_k8s_job_executor(init_context):
     .. code-block:: YAML
 
         execution:
-          celery-k8s:
-            config:
-              job_image: 'my_repo.com/image_name:latest'
-              job_namespace: 'some-namespace'
-              broker: 'pyamqp://guest@localhost//'  # Optional[str]: The URL of the Celery broker
-              backend: 'rpc://' # Optional[str]: The URL of the Celery results backend
-              include: ['my_module'] # Optional[List[str]]: Modules every worker should import
-              config_source: # Dict[str, Any]: Any additional parameters to pass to the
-                  #...       # Celery workers. This dict will be passed as the `config_source`
-                  #...       # argument of celery.Celery().
+          config:
+            job_image: 'my_repo.com/image_name:latest'
+            job_namespace: 'some-namespace'
+            broker: 'pyamqp://guest@localhost//'  # Optional[str]: The URL of the Celery broker
+            backend: 'rpc://' # Optional[str]: The URL of the Celery results backend
+            include: ['my_module'] # Optional[List[str]]: Modules every worker should import
+            config_source: # Dict[str, Any]: Any additional parameters to pass to the
+                #...       # Celery workers. This dict will be passed as the `config_source`
+                #...       # argument of celery.Celery().
 
     Note that the YAML you provide here must align with the configuration with which the Celery
     workers on which you hope to run were started. If, for example, you point the executor at a
@@ -125,6 +122,8 @@ def celery_k8s_job_executor(init_context):
         service_account_name=exc_cfg.get("service_account_name"),
         env_config_maps=exc_cfg.get("env_config_maps"),
         env_secrets=exc_cfg.get("env_secrets"),
+        volume_mounts=exc_cfg.get("volume_mounts"),
+        volumes=exc_cfg.get("volumes"),
     )
 
     # Set on the instance but overrideable here
@@ -188,7 +187,7 @@ class CeleryK8sJobExecutor(Executor):
         )
 
         self.kubeconfig_file = check.opt_str_param(kubeconfig_file, "kubeconfig_file")
-        self.repo_location_name = check.str_param(repo_location_name, "repo_location_name")
+        self.repo_location_name = check.opt_str_param(repo_location_name, "repo_location_name")
         self.job_wait_timeout = check.float_param(job_wait_timeout, "job_wait_timeout")
 
     @property
@@ -232,7 +231,7 @@ def _submit_task_k8s_job(app, pipeline_context, step, queue, priority, known_sta
         job_config = job_config.with_image(pipeline_origin.repository_origin.container_image)
 
     if not job_config.job_image:
-        raise Exception("No image included in either executor config or the pipeline")
+        raise Exception("No image included in either executor config or the dagster job")
 
     task = create_k8s_job_task(app)
     task_signature = task.si(
@@ -352,7 +351,7 @@ def create_k8s_job_task(celery_app, **task_kwargs):
 
         if pipeline_run.status != PipelineRunStatus.STARTED:
             instance.report_engine_event(
-                "Not scheduling step because pipeline run status is not STARTED",
+                "Not scheduling step because dagster run status is not STARTED",
                 pipeline_run,
                 EngineEventData(
                     [
@@ -463,7 +462,7 @@ def create_k8s_job_task(celery_app, **task_kwargs):
             events.append(step_failure_event)
         except DagsterK8sPipelineStatusException:
             instance.report_engine_event(
-                "Terminating Kubernetes Job because pipeline run status is not STARTED",
+                "Terminating Kubernetes Job because dagster run status is not STARTED",
                 pipeline_run,
                 EngineEventData(
                     [

@@ -1,19 +1,17 @@
 import {gql, useApolloClient, useQuery} from '@apollo/client';
-import {Button, Colors, Icon} from '@blueprintjs/core';
 import merge from 'deepmerge';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 import * as yaml from 'yaml';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
-import {useFeatureFlags} from '../app/Flags';
 import {
-  PipelineRunTag,
-  SessionBase,
-  useStorage,
   applyChangesToSession,
   applyCreateSession,
   IExecutionSessionChanges,
+  PipelineRunTag,
+  SessionBase,
+  useStorage,
 } from '../app/LocalStorage';
 import {PythonErrorInfo} from '../app/PythonErrorInfo';
 import {ShortcutHandler} from '../app/ShortcutHandler';
@@ -28,8 +26,10 @@ import {isHelpContextEqual} from '../configeditor/isHelpContextEqual';
 import {DagsterTag} from '../runs/RunTag';
 import {RepositorySelector} from '../types/globalTypes';
 import {Box} from '../ui/Box';
-import {ButtonLink} from '../ui/ButtonLink';
+import {ButtonWIP} from '../ui/Button';
+import {ColorsWIP} from '../ui/Colors';
 import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
 import {SecondPanelToggle, SplitPanelContainer} from '../ui/SplitPanelContainer';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
@@ -64,7 +64,6 @@ type Preset = ConfigEditorGeneratorPipelineFragment_presets;
 interface IExecutionSessionContainerProps {
   pipeline: ExecutionSessionContainerPipelineFragment;
   partitionSets: ExecutionSessionContainerPartitionSetsFragment;
-  pipelineMode?: string;
   repoAddress: RepoAddress;
 }
 
@@ -130,7 +129,7 @@ const initialState: IExecutionSessionContainerState = {
 };
 
 const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (props) => {
-  const {partitionSets, pipeline, pipelineMode, repoAddress} = props;
+  const {partitionSets, pipeline, repoAddress} = props;
 
   const client = useApolloClient();
   const [state, dispatch] = React.useReducer(reducer, initialState);
@@ -139,34 +138,25 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
   const editor = React.useRef<ConfigEditor | null>(null);
   const editorSplitPanelContainer = React.useRef<SplitPanelContainer | null>(null);
   const previewCounter = React.useRef(0);
-  const {flagPipelineModeTuples} = useFeatureFlags();
 
-  const {presets} = pipeline;
+  const {isJob, presets} = pipeline;
 
   const initialDataForMode = React.useMemo(() => {
-    if (flagPipelineModeTuples) {
-      const presetsForMode = presets.filter((preset) => preset.mode === pipelineMode);
-      const partitionSetsForMode = partitionSets.results.filter(
-        (partitionSet) => partitionSet.mode === pipelineMode,
-      );
+    const presetsForMode = isJob ? (presets.length ? [presets[0]] : []) : presets;
+    const partitionSetsForMode = partitionSets.results;
 
-      if (presetsForMode.length === 1 && partitionSetsForMode.length === 0) {
-        return {runConfigYaml: presetsForMode[0].runConfigYaml};
-      }
+    if (presetsForMode.length === 1 && partitionSetsForMode.length === 0) {
+      return {runConfigYaml: presetsForMode[0].runConfigYaml};
+    }
 
-      if (!presetsForMode.length && partitionSetsForMode.length === 1) {
-        return {base: {partitionsSetName: partitionSetsForMode[0].name, partitionName: null}};
-      }
+    if (!presetsForMode.length && partitionSetsForMode.length === 1) {
+      return {base: {partitionsSetName: partitionSetsForMode[0].name, partitionName: null}};
     }
 
     return {};
-  }, [flagPipelineModeTuples, partitionSets, pipelineMode, presets]);
+  }, [isJob, partitionSets.results, presets]);
 
-  const [data, onSave] = useStorage(
-    repoAddress.name || '',
-    flagPipelineModeTuples ? `${pipeline.name}:${pipelineMode}` : pipeline.name,
-    initialDataForMode,
-  );
+  const [data, onSave] = useStorage(repoAddress.name || '', pipeline.name, initialDataForMode);
 
   const currentSession = data.sessions[data.current];
 
@@ -280,10 +270,7 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
     if (!currentSession) {
       return;
     }
-    const mode = pipelineMode || currentSession.mode;
-    if (!mode) {
-      return;
-    }
+
     const tags = currentSession.tags || [];
     let runConfigData = {};
     try {
@@ -299,7 +286,7 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
       executionParams: {
         runConfigData,
         selector: pipelineSelector,
-        mode,
+        mode: currentSession.mode || 'default',
         executionMetadata: {
           tags: [
             ...tags.map((tag) => ({key: tag.key, value: tag.value})),
@@ -353,7 +340,7 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
       variables: {
         runConfigData: configJSON,
         pipeline: pipelineSelector,
-        mode: pipelineMode || currentSession.mode || 'default',
+        mode: currentSession.mode || 'default',
       },
     });
 
@@ -545,7 +532,6 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
             <SessionSettingsBar>
               <ConfigEditorConfigPicker
                 pipeline={pipeline}
-                pipelineMode={pipelineMode}
                 partitionSets={partitionSets.results}
                 base={currentSession.base}
                 onSaveSession={onSaveSession}
@@ -566,7 +552,7 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
                 onChange={onSolidSelectionChange}
                 repoAddress={repoAddress}
               />
-              {pipelineMode ? (
+              {isJob ? (
                 <span />
               ) : (
                 <>
@@ -579,23 +565,6 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
                   />
                 </>
               )}
-              {tagsFromSession.length ? null : (
-                <Box margin={{left: 12}}>
-                  <ShortcutHandler
-                    shortcutLabel={'⌥T'}
-                    shortcutFilter={(e) => e.keyCode === 84 && e.altKey}
-                    onShortcut={openTagEditor}
-                  >
-                    <ButtonLink
-                      color={{link: Colors.GRAY3, hover: Colors.DARK_GRAY3}}
-                      onClick={openTagEditor}
-                      underline="always"
-                    >
-                      + Add tags
-                    </ButtonLink>
-                  </ShortcutHandler>
-                </Box>
-              )}
               <TagEditor
                 tagsFromDefinition={tagsFromDefinition}
                 tagsFromSession={tagsFromSession}
@@ -604,41 +573,56 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
                 onRequestClose={closeTagEditor}
               />
               <div style={{flex: 1}} />
-              <Button
-                icon="paragraph"
-                small={true}
+              {tagsFromSession.length ? null : (
+                <>
+                  <ShortcutHandler
+                    shortcutLabel={'⌥T'}
+                    shortcutFilter={(e) => e.keyCode === 84 && e.altKey}
+                    onShortcut={openTagEditor}
+                  >
+                    <ButtonWIP onClick={openTagEditor} icon={<IconWIP name="add_circle" />}>
+                      Add tags
+                    </ButtonWIP>
+                  </ShortcutHandler>
+                  <SessionSettingsSpacer />
+                </>
+              )}
+              <ButtonWIP
+                title="Toggle whitespace"
+                icon={<IconWIP name="toggle_whitespace" />}
                 active={showWhitespace}
-                style={{marginLeft: 'auto'}}
                 onClick={() => dispatch({type: 'toggle-whitepsace', payload: !showWhitespace})}
               />
               <SessionSettingsSpacer />
               <SecondPanelToggle axis="horizontal" container={editorSplitPanelContainer} />
             </SessionSettingsBar>
             {allTags.fromDefinition.length || allTags.fromSession.length ? (
-              <TagContainer tags={allTags} onRequestEdit={openTagEditor} />
+              <Box
+                padding={{vertical: 8, left: 12, right: 0}}
+                border={{side: 'bottom', width: 1, color: ColorsWIP.Gray200}}
+              >
+                <TagContainer tags={allTags} onRequestEdit={openTagEditor} />
+              </Box>
             ) : null}
             {refreshableSessionBase ? (
               <Box
                 padding={{vertical: 8, horizontal: 12}}
-                border={{side: 'bottom', width: 1, color: Colors.LIGHT_GRAY1}}
+                border={{side: 'bottom', width: 1, color: ColorsWIP.Gray200}}
               >
                 <Group direction="row" spacing={8} alignItems="center">
-                  <Icon icon="warning-sign" color={Colors.GOLD3} />
+                  <IconWIP name="warning" color={ColorsWIP.Yellow500} />
                   <div>
                     Your repository has been manually refreshed, and this configuration may now be
                     out of date.
                   </div>
-                  <Button
-                    small
+                  <ButtonWIP
                     intent="primary"
                     onClick={() => onRefreshConfig(refreshableSessionBase)}
                     disabled={state.configLoading}
                   >
                     Refresh config
-                  </Button>
-                  <Button small onClick={onDismissRefreshWarning}>
-                    Dismiss
-                  </Button>
+                  </ButtonWIP>
+                  <ButtonWIP onClick={onDismissRefreshWarning}>Dismiss</ButtonWIP>
                 </Group>
               </Box>
             ) : null}
@@ -691,7 +675,7 @@ const ExecutionSessionContainer: React.FC<IExecutionSessionContainerProps> = (pr
           </>
         }
       />
-      <div style={{position: 'absolute', bottom: 14, right: 14, zIndex: 1}}>
+      <div style={{position: 'absolute', bottom: 12, right: 12, zIndex: 1}}>
         <LaunchRootExecutionButton
           pipelineName={pipeline.name}
           getVariables={buildExecutionVariables}

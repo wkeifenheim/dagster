@@ -1,21 +1,9 @@
 import {gql, useLazyQuery, useMutation, useQuery} from '@apollo/client';
-import {
-  Checkbox,
-  Intent,
-  NonIdealState,
-  Classes,
-  Colors,
-  InputGroup,
-  Icon,
-} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {SharedToaster} from '../app/DomUtils';
-import {useFeatureFlags} from '../app/Flags';
 import {filterByQuery} from '../app/GraphQueryImpl';
 import {PipelineRunTag} from '../app/LocalStorage';
 import {PythonErrorInfo, PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorInfo';
@@ -24,13 +12,22 @@ import {TagContainer, TagEditor} from '../execute/TagEditor';
 import {GanttChartMode} from '../gantt/GanttChart';
 import {buildLayout} from '../gantt/GanttChartLayout';
 import {useViewport} from '../gantt/useViewport';
-import {PipelineRunStatus} from '../types/globalTypes';
+import {RunStatus} from '../types/globalTypes';
 import {Alert} from '../ui/Alert';
 import {Box} from '../ui/Box';
+import {ButtonWIP} from '../ui/Button';
 import {ButtonLink} from '../ui/ButtonLink';
+import {Checkbox} from '../ui/Checkbox';
+import {ColorsWIP} from '../ui/Colors';
+import {DialogBody, DialogFooter} from '../ui/Dialog';
 import {GraphQueryInput} from '../ui/GraphQueryInput';
 import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
+import {NonIdealState} from '../ui/NonIdealState';
 import {Spinner} from '../ui/Spinner';
+import {TextInput} from '../ui/TextInput';
+import {Tooltip} from '../ui/Tooltip';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
 
@@ -124,9 +121,10 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
   partitionSetName: string;
   pipelineName: string;
   onLaunch?: (backfillId: string, stepQuery: string) => void;
+  onCancel?: () => void;
   onSubmit: () => void;
   repoAddress: RepoAddress;
-}> = ({partitionSetName, pipelineName, onLaunch, onSubmit, repoAddress}) => {
+}> = ({partitionSetName, pipelineName, onLaunch, onCancel, onSubmit, repoAddress}) => {
   const repositorySelector = repoAddressToSelector(repoAddress);
   const [currentSelectionRange, setCurrentSelectionRange] = React.useState<
     SelectionRange | undefined
@@ -139,7 +137,9 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
     reexecute: false,
     fromFailure: false,
   });
-  const {flagPipelineModeTuples} = useFeatureFlags();
+
+  const repo = useRepository(repoAddress);
+  const isJob = isThisThingAJob(repo, pipelineName);
 
   const {containerProps} = useViewport({
     initialOffset: React.useCallback((el) => ({left: el.scrollWidth - el.clientWidth, top: 0}), []),
@@ -195,29 +195,35 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
 
   if (data.partitionSetOrError.__typename === 'PartitionSetNotFoundError') {
     return (
-      <NonIdealState
-        icon={IconNames.ERROR}
-        title="Partition Set Not Found"
-        description={data.partitionSetOrError.message}
-      />
+      <Box margin={20}>
+        <NonIdealState
+          icon="error"
+          title="Partition Set Not Found"
+          description={data.partitionSetOrError.message}
+        />
+      </Box>
     );
   }
   if (data.pipelineSnapshotOrError.__typename === 'PipelineNotFoundError') {
     return (
-      <NonIdealState
-        icon={IconNames.ERROR}
-        title={flagPipelineModeTuples ? 'Job not found' : 'Pipeline not found'}
-        description={data.pipelineSnapshotOrError.message}
-      />
+      <Box margin={20}>
+        <NonIdealState
+          icon="error"
+          title={isJob ? 'Job not found' : 'Pipeline not found'}
+          description={data.pipelineSnapshotOrError.message}
+        />
+      </Box>
     );
   }
   if (data.pipelineSnapshotOrError.__typename === 'PipelineSnapshotNotFoundError') {
     return (
-      <NonIdealState
-        icon={IconNames.ERROR}
-        title={flagPipelineModeTuples ? 'Job not found' : 'Pipeline not found'}
-        description={data.pipelineSnapshotOrError.message}
-      />
+      <Box margin={20}>
+        <NonIdealState
+          icon="error"
+          title={isJob ? 'Job not found' : 'Pipeline not found'}
+          description={data.pipelineSnapshotOrError.message}
+        />
+      </Box>
     );
   }
 
@@ -253,7 +259,7 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
           <FilteredRunsLink href="/instance/backfills">{backfillId}</FilteredRunsLink>
         </div>
       ),
-      intent: Intent.SUCCESS,
+      intent: 'success',
     });
     onLaunch?.(backfillId, query);
   };
@@ -285,7 +291,7 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
         <div>An unexpected error occurred. This backfill was not launched.</div>
         {errors ? (
           <ButtonLink
-            color={Colors.WHITE}
+            color={ColorsWIP.White}
             underline="always"
             onClick={() => {
               showCustomAlert({
@@ -302,7 +308,7 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
     SharedToaster.show({
       message,
       icon: 'error',
-      intent: Intent.DANGER,
+      intent: 'danger',
     });
   };
 
@@ -336,15 +342,15 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
   const statuses = partitionStatuses();
 
   const partitionsWithLastRunSuccess = statuses
-    .filter((x) => x.runStatus === PipelineRunStatus.SUCCESS)
+    .filter((x) => x.runStatus === RunStatus.SUCCESS)
     .map((x) => x.partitionName);
 
   const partitionsWithLastRunFailure = statuses
     .filter(
       (x) =>
-        x.runStatus === PipelineRunStatus.FAILURE ||
-        x.runStatus === PipelineRunStatus.CANCELED ||
-        x.runStatus === PipelineRunStatus.CANCELING,
+        x.runStatus === RunStatus.FAILURE ||
+        x.runStatus === RunStatus.CANCELED ||
+        x.runStatus === RunStatus.CANCELING,
     )
     .map((x) => x.partitionName);
 
@@ -404,52 +410,55 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
   const selectedString = partitionsToText(selected, partitionNames);
 
   return (
-    <div>
-      <div className={Classes.DIALOG_BODY}>
-        <div style={{display: 'flex', alignItems: 'center', marginBottom: 4}}>
-          <strong style={{display: 'block'}}>Partitions</strong>
-          <Checkbox
-            label="Select all"
-            disabled={!selectablePartitions.length}
-            style={{marginBottom: 0, marginLeft: 10}}
-            checked={selected.length === selectablePartitions.length}
-            onClick={() =>
-              setSelected(
-                selected.length === selectablePartitions.length ? [] : selectablePartitions,
-              )
-            }
+    <>
+      <DialogBody>
+        <Box flex={{direction: 'column', gap: 8}}>
+          <Box flex={{direction: 'row', alignItems: 'center', gap: 12}}>
+            <strong style={{display: 'block'}}>Partitions</strong>
+            <Checkbox
+              label="Select all"
+              disabled={!selectablePartitions.length}
+              style={{marginBottom: 0, marginLeft: 10}}
+              checked={selected.length === selectablePartitions.length}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                if (!e.target.checked) {
+                  setSelected([]);
+                } else {
+                  setSelected(
+                    selected.length === selectablePartitions.length ? [] : selectablePartitions,
+                  );
+                }
+              }}
+            />
+          </Box>
+          <TextInput
+            placeholder={placeholderForPartitions(partitionNames)}
+            defaultValue={selectedString}
+            style={{display: 'flex', width: '100%'}}
+            onBlur={(e) => {
+              try {
+                setSelected(textToPartitions(e.target.value, partitionNames));
+              } catch (err: any) {
+                e.preventDefault();
+                showCustomAlert({body: err.message});
+              }
+            }}
           />
-        </div>
-        <InputGroup
-          small
-          fill
-          placeholder={placeholderForPartitions(partitionNames)}
-          key={selectedString}
-          defaultValue={selectedString}
-          onBlur={(e) => {
-            try {
-              setSelected(textToPartitions(e.target.value, partitionNames));
-            } catch (err) {
-              e.preventDefault();
-              alert(err.message);
-            }
-          }}
-        />
-        <div style={{display: 'flex', marginTop: 10}}>
-          <div>
-            <strong style={{display: 'block', marginBottom: 4}}>Step Subset</strong>
+        </Box>
+        <Box flex={{direction: 'row', gap: 24}} margin={{top: 16}}>
+          <Box flex={{direction: 'column', gap: 8}}>
+            <strong>Step subset</strong>
             <GraphQueryInput
-              small
               disabled={options.fromFailure}
-              width={260}
+              width={520}
               items={solids}
               value={query}
-              placeholder="Type a Step Subset"
+              placeholder="Type a step subset"
               onChange={setQuery}
             />
-          </div>
-          <div style={{marginLeft: 20}}>
-            <strong style={{display: 'block', marginBottom: 6}}>Options</strong>
+          </Box>
+          <Box flex={{direction: 'column', gap: 12}}>
+            <strong>Options</strong>
             <div style={{display: 'flex'}}>
               <Checkbox
                 checked={options.fromFailure}
@@ -465,38 +474,63 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
                     fromFailure: !options.fromFailure,
                   });
                 }}
-              >
-                Re-execute from failures
-                <Tooltip content="For each partition, if the most recent run failed, launch a re-execution starting from the steps that failed.">
-                  <Icon
-                    icon="info-sign"
-                    iconSize={12}
-                    color={Colors.GRAY3}
-                    style={{position: 'relative', top: '-2px', marginLeft: '6px'}}
-                  />
-                </Tooltip>
-              </Checkbox>
+                label={
+                  <Box flex={{display: 'inline-flex', alignItems: 'center'}}>
+                    <Box margin={{right: 4}}>Re-execute from failures</Box>
+                    <Tooltip
+                      placement="top"
+                      content="For each partition, if the most recent run failed, launch a re-execution starting from the steps that failed."
+                    >
+                      <IconWIP name="info" color={ColorsWIP.Gray500} />
+                    </Tooltip>
+                  </Box>
+                }
+              />
               {statusesLoading ? (
                 <div style={{marginLeft: '8px', marginTop: '3px'}}>
                   <Spinner purpose="body-text" />
                 </div>
               ) : null}
             </div>
-          </div>
-        </div>
+          </Box>
+        </Box>
+        <Box flex={{direction: 'column', gap: 8}} margin={{top: 16}}>
+          <TagEditor
+            tagsFromSession={tags}
+            onChange={setTags}
+            open={tagEditorOpen}
+            onRequestClose={() => setTagEditorOpen(false)}
+          />
+          <strong>Tags</strong>
+          {tags.length ? (
+            <div style={{border: `1px solid ${ColorsWIP.Gray300}`, borderRadius: 8, padding: 3}}>
+              <TagContainer
+                tags={{fromSession: tags}}
+                onRequestEdit={() => setTagEditorOpen(true)}
+              />
+            </div>
+          ) : (
+            <div>
+              <ButtonWIP onClick={() => setTagEditorOpen(true)}>
+                Add tags to backfill runs
+              </ButtonWIP>
+            </div>
+          )}
+        </Box>
+
         <div
           style={{
             display: 'flex',
             marginTop: 20,
             paddingTop: 20,
-            borderTop: `1px solid ${Colors.LIGHT_GRAY3}`,
+            borderTop: `1px solid ${ColorsWIP.Gray100}`,
             justifyContent: 'space-between',
           }}
         >
           <strong style={{display: 'block', marginBottom: 4}}>Preview</strong>
-          <div style={{color: Colors.GRAY3}}>Click or drag to edit selected partitions</div>
+          <div style={{color: ColorsWIP.Gray400}}>Click or drag to edit selected partitions</div>
         </div>
-        <div style={{display: 'flex', border: `1px solid ${Colors.LIGHT_GRAY1}`}}>
+        <div style={{display: 'flex', border: `1px solid ${ColorsWIP.Gray200}`}}>
           {query && (
             <GridFloatingContainer floating={true}>
               <GridColumn disabled>
@@ -560,7 +594,7 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
                 <div>
                   See the{' '}
                   <a
-                    href="https://docs.dagster.io/overview/daemon"
+                    href="https://docs.dagster.io/deployment/dagster-daemon"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -587,7 +621,7 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
                   Check your instance configuration in <code>dagster.yaml</code> to either configure{' '}
                   the{' '}
                   <a
-                    href="https://docs.dagster.io/overview/pipeline-runs/run-coordinator"
+                    href="https://docs.dagster.io/deployment/run-coordinator"
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -600,49 +634,28 @@ export const PartitionsBackfillPartitionSelector: React.FC<{
             />
           </div>
         ) : null}
-      </div>
-      <div className={Classes.DIALOG_FOOTER}>
-        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'flex-end'}}>
-          <TagEditor
-            tagsFromSession={tags}
-            onChange={setTags}
-            open={tagEditorOpen}
-            onRequestClose={() => setTagEditorOpen(false)}
-          />
-          {tags.length ? (
-            <div style={{border: '1px solid #ececec', borderBottom: 'none'}}>
-              <TagContainer
-                tags={{fromSession: tags}}
-                onRequestEdit={() => setTagEditorOpen(true)}
-              />
-            </div>
-          ) : (
-            <ButtonLink
-              color="#106ba3"
-              onClick={() => setTagEditorOpen(true)}
-              style={{margin: '9px  9px 0 9px'}}
-            >
-              + Add tags to backfill runs
-            </ButtonLink>
-          )}
-          <LaunchBackfillButton
-            partitionNames={selected}
-            partitionSetName={partitionSet.name}
-            reexecutionSteps={
-              !options.fromFailure && solidsFiltered.all.length < solids.length
-                ? stepRows.map((step) => step.name)
-                : undefined
-            }
-            fromFailure={options.fromFailure}
-            tags={tags}
-            onSubmit={onSubmit}
-            onSuccess={onSuccess}
-            onError={onError}
-            repoAddress={repoAddress}
-          />
-        </div>
-      </div>
-    </div>
+      </DialogBody>
+      <DialogFooter>
+        <ButtonWIP intent="none" onClick={onCancel}>
+          Cancel
+        </ButtonWIP>
+        <LaunchBackfillButton
+          partitionNames={selected}
+          partitionSetName={partitionSet.name}
+          reexecutionSteps={
+            !options.fromFailure && solidsFiltered.all.length < solids.length
+              ? stepRows.map((step) => step.name)
+              : undefined
+          }
+          fromFailure={options.fromFailure}
+          tags={tags}
+          onSubmit={onSubmit}
+          onSuccess={onSuccess}
+          onError={onError}
+          repoAddress={repoAddress}
+        />
+      </DialogFooter>
+    </>
   );
 };
 
@@ -732,17 +745,15 @@ const LaunchBackfillButton: React.FC<{
   const buttonTitle = [title(), subtitle()].join(' ');
 
   return (
-    <Box flex={{justifyContent: 'flex-end', alignItems: 'center'}} margin={{top: 12}}>
-      <LaunchButton
-        runCount={count}
-        config={{
-          title: buttonTitle,
-          icon: 'send-to',
-          disabled: !count || loading,
-          onClick: onLaunch,
-        }}
-      />
-    </Box>
+    <LaunchButton
+      runCount={count}
+      config={{
+        title: buttonTitle,
+        icon: 'open_in_new',
+        disabled: !count || loading,
+        onClick: onLaunch,
+      }}
+    />
   );
 };
 
@@ -883,7 +894,7 @@ const LAUNCH_PARTITION_BACKFILL_MUTATION = gql`
       ... on PipelineNotFoundError {
         message
       }
-      ... on PipelineRunConflict {
+      ... on RunConflict {
         message
       }
       ... on ConflictingExecutionParamsError {
@@ -892,7 +903,7 @@ const LAUNCH_PARTITION_BACKFILL_MUTATION = gql`
       ... on PresetNotFoundError {
         message
       }
-      ... on PipelineConfigValidationInvalid {
+      ... on RunConfigValidationInvalid {
         pipelineName
         errors {
           __typename

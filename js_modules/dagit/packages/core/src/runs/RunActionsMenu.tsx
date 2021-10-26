@@ -1,15 +1,19 @@
 import {gql, useLazyQuery, useMutation} from '@apollo/client';
-import {Button, Menu, MenuDivider, MenuItem, Popover, Position} from '@blueprintjs/core';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as qs from 'query-string';
 import * as React from 'react';
 
 import {AppContext} from '../app/AppContext';
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {usePermissions} from '../app/Permissions';
+import {ButtonWIP} from '../ui/Button';
 import {HighlightedCodeBlock} from '../ui/HighlightedCodeBlock';
+import {IconWIP} from '../ui/Icon';
+import {MenuDividerWIP, MenuItemWIP, MenuWIP} from '../ui/Menu';
+import {Popover} from '../ui/Popover';
+import {Tooltip} from '../ui/Tooltip';
+import {isThisThingAJob} from '../workspace/WorkspaceContext';
 import {useRepositoryForRun} from '../workspace/useRepositoryForRun';
-import {workspacePipelinePathGuessRepo} from '../workspace/workspacePath';
+import {workspacePipelinePath, workspacePipelinePathGuessRepo} from '../workspace/workspacePath';
 
 import {DeletionDialog} from './DeletionDialog';
 import {RUN_FRAGMENT_FOR_REPOSITORY_MATCH} from './RunFragments';
@@ -54,22 +58,42 @@ export const RunActionsMenu: React.FC<{
   };
 
   const pipelineRun =
-    data?.pipelineRunOrError?.__typename === 'PipelineRun' ? data?.pipelineRunOrError : null;
+    data?.pipelineRunOrError?.__typename === 'Run' ? data?.pipelineRunOrError : null;
   const runConfigYaml = pipelineRun?.runConfigYaml;
 
   const repoMatch = useRepositoryForRun(pipelineRun);
   const isFinished = doneStatuses.has(run.status);
+  const isJob = !!(repoMatch && isThisThingAJob(repoMatch?.match, run.pipelineName));
+
+  const playgroundPath = () => {
+    const path = `/playground/setup?${qs.stringify({
+      config: runConfigYaml,
+      solidSelection: run.solidSelection,
+    })}`;
+
+    if (repoMatch) {
+      return workspacePipelinePath({
+        repoName: repoMatch.match.repository.name,
+        repoLocation: repoMatch.match.repositoryLocation.name,
+        pipelineName: run.pipelineName,
+        isJob,
+        path,
+      });
+    }
+
+    return workspacePipelinePathGuessRepo(run.pipelineName, isJob, path);
+  };
 
   const infoReady = called ? !loading : false;
   return (
     <>
       <Popover
         content={
-          <Menu>
-            <MenuItem
+          <MenuWIP>
+            <MenuItemWIP
               text={loading ? 'Loading Configuration...' : 'View Configuration...'}
               disabled={!runConfigYaml}
-              icon="share"
+              icon="open_in_new"
               onClick={() =>
                 showCustomAlert({
                   title: 'Config',
@@ -77,41 +101,33 @@ export const RunActionsMenu: React.FC<{
                 })
               }
             />
-            <MenuDivider />
+            <MenuDividerWIP />
             <>
               <Tooltip
                 content={OPEN_PLAYGROUND_UNKNOWN}
-                position={Position.BOTTOM}
+                position="bottom"
                 disabled={infoReady}
                 targetTagName="div"
               >
-                <MenuItem
-                  text="Open in Playground..."
+                <MenuItemWIP
+                  text="Open in Launchpad..."
                   disabled={!infoReady}
                   icon="edit"
-                  target="_blank"
-                  href={workspacePipelinePathGuessRepo(
-                    run.pipelineName,
-                    run.mode,
-                    `/playground/setup?${qs.stringify({
-                      config: runConfigYaml,
-                      solidSelection: run.solidSelection,
-                    })}`,
-                  )}
+                  href={playgroundPath()}
                 />
               </Tooltip>
               <Tooltip
                 content={
                   'Re-execute is unavailable because the pipeline is not present in the current workspace.'
                 }
-                position={Position.BOTTOM}
+                position="bottom"
                 disabled={infoReady && !!repoMatch}
                 targetTagName="div"
               >
-                <MenuItem
+                <MenuItemWIP
                   text="Re-execute"
                   disabled={!infoReady || !repoMatch}
-                  icon="repeat"
+                  icon="refresh"
                   onClick={async () => {
                     if (repoMatch && runConfigYaml) {
                       const result = await reexecute({
@@ -128,33 +144,38 @@ export const RunActionsMenu: React.FC<{
                 />
               </Tooltip>
               {isFinished || !canTerminatePipelineExecution ? null : (
-                <MenuItem
-                  icon="stop"
+                <MenuItemWIP
+                  icon="cancel"
                   text="Terminate"
                   onClick={() => setVisibleDialog('terminate')}
                 />
               )}
-              <MenuDivider />
+              <MenuDividerWIP />
             </>
-            <MenuItem
+            <MenuItemWIP
               text="Download Debug File"
-              icon="download"
+              icon="download_for_offline"
               download
               href={`${rootServerURI}/download_debug/${run.runId}`}
             />
             {canDeletePipelineRun ? (
-              <MenuItem icon="trash" text="Delete" onClick={() => setVisibleDialog('delete')} />
+              <MenuItemWIP
+                icon="delete"
+                text="Delete"
+                intent="danger"
+                onClick={() => setVisibleDialog('delete')}
+              />
             ) : null}
-          </Menu>
+          </MenuWIP>
         }
-        position={'bottom'}
+        position="bottom-right"
         onOpening={() => {
           if (!called) {
             loadEnv();
           }
         }}
       >
-        <Button minimal={true} icon="more" style={{position: 'relative', top: '-6px'}} />
+        <ButtonWIP icon={<IconWIP name="expand_more" />} />
       </Popover>
       {canTerminatePipelineExecution ? (
         <TerminationDialog
@@ -212,10 +233,10 @@ export const RunBulkActionsMenu: React.FC<{
     <>
       <Popover
         content={
-          <Menu>
+          <MenuWIP>
             {canTerminatePipelineExecution ? (
-              <MenuItem
-                icon="stop"
+              <MenuItemWIP
+                icon="cancel"
                 text={`Terminate ${unfinishedIDs.length} ${
                   unfinishedIDs.length === 1 ? 'run' : 'runs'
                 }`}
@@ -226,8 +247,9 @@ export const RunBulkActionsMenu: React.FC<{
               />
             ) : null}
             {canDeletePipelineRun ? (
-              <MenuItem
-                icon="trash"
+              <MenuItemWIP
+                icon="delete"
+                intent="danger"
                 text={`Delete ${selectedIDs.length} ${selectedIDs.length === 1 ? 'run' : 'runs'}`}
                 disabled={selectedIDs.length === 0}
                 onClick={() => {
@@ -235,11 +257,13 @@ export const RunBulkActionsMenu: React.FC<{
                 }}
               />
             ) : null}
-          </Menu>
+          </MenuWIP>
         }
-        position={'bottom'}
+        position="bottom-right"
       >
-        <Button disabled={selected.length === 0} text="Actions" rightIcon="caret-down" small />
+        <ButtonWIP disabled={selected.length === 0} rightIcon={<IconWIP name="expand_more" />}>
+          Actions
+        </ButtonWIP>
       </Popover>
       <TerminationDialog
         isOpen={visibleDialog === 'terminate'}
@@ -259,13 +283,13 @@ export const RunBulkActionsMenu: React.FC<{
 });
 
 const OPEN_PLAYGROUND_UNKNOWN =
-  'Playground is unavailable because the pipeline is not present in the current repository.';
+  'Launchpad is unavailable because the pipeline is not present in the current repository.';
 
 // Avoid fetching envYaml on load in Runs page. It is slow.
 const PIPELINE_ENVIRONMENT_YAML_QUERY = gql`
   query PipelineEnvironmentYamlQuery($runId: ID!) {
     pipelineRunOrError(runId: $runId) {
-      ... on PipelineRun {
+      ... on Run {
         id
         pipeline {
           name

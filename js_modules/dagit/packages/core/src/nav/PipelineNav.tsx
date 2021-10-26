@@ -1,9 +1,7 @@
-import {IconName, Tab, Tabs, Colors} from '@blueprintjs/core';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
+import {IconName} from '@blueprintjs/core';
 import React from 'react';
-import {Link, useRouteMatch} from 'react-router-dom';
+import {useRouteMatch} from 'react-router-dom';
 
-import {useFeatureFlags} from '../app/Flags';
 import {DISABLED_MESSAGE, PermissionsMap, usePermissions} from '../app/Permissions';
 import {
   explorerPathFromString,
@@ -11,10 +9,12 @@ import {
   PipelineExplorerPath,
 } from '../pipelines/PipelinePathUtils';
 import {Box} from '../ui/Box';
-import {Group} from '../ui/Group';
 import {PageHeader} from '../ui/PageHeader';
+import {Tab, Tabs} from '../ui/Tabs';
+import {TagWIP} from '../ui/TagWIP';
 import {Heading} from '../ui/Text';
-import {useRepository} from '../workspace/WorkspaceContext';
+import {Tooltip} from '../ui/Tooltip';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
@@ -31,7 +31,7 @@ interface TabConfig {
 const pipelineTabs: {[key: string]: TabConfig} = {
   overview: {title: 'Overview', pathComponent: '', icon: 'dashboard'},
   playground: {
-    title: 'Playground',
+    title: 'Launchpad',
     pathComponent: 'playground',
     icon: 'manually-entered-data',
     isAvailable: (permissions: PermissionsMap) => permissions.canLaunchPipelineExecution,
@@ -50,7 +50,7 @@ const pipelineTabs: {[key: string]: TabConfig} = {
 
 const currentOrder = ['overview', 'playground', 'runs', 'partitions'];
 
-export function tabForPipelinePathComponent(component?: string): TabConfig {
+function tabForPipelinePathComponent(component?: string): TabConfig {
   const tabList = Object.keys(pipelineTabs);
   const match =
     tabList.find((t) => pipelineTabs[t].pathComponent === component) ||
@@ -58,7 +58,11 @@ export function tabForPipelinePathComponent(component?: string): TabConfig {
   return pipelineTabs[match];
 }
 
-const tabForKey = (repoAddress: RepoAddress, explorerPath: PipelineExplorerPath) => {
+const tabForKey = (
+  repoAddress: RepoAddress,
+  isJob: boolean,
+  explorerPath: PipelineExplorerPath,
+) => {
   const explorerPathForTab = explorerPathToString({
     ...explorerPath,
     pathSolids: [],
@@ -72,7 +76,7 @@ const tabForKey = (repoAddress: RepoAddress, explorerPath: PipelineExplorerPath)
       text: tab.title,
       href: workspacePathFromAddress(
         repoAddress,
-        `/pipelines/${explorerPathForTab}${tab.pathComponent}`,
+        `/${isJob ? 'jobs' : 'pipelines'}/${explorerPathForTab}${tab.pathComponent}`,
       ),
       isAvailable: tab.isAvailable,
     };
@@ -86,81 +90,61 @@ interface Props {
 export const PipelineNav: React.FC<Props> = (props) => {
   const {repoAddress} = props;
   const permissions = usePermissions();
-  const {flagPipelineModeTuples} = useFeatureFlags();
   const repo = useRepository(repoAddress);
   const match = useRouteMatch<{tab?: string; selector: string}>([
     '/workspace/:repoPath/pipelines/:selector/:tab?',
     '/workspace/:repoPath/jobs/:selector/:tab?',
+    '/workspace/:repoPath/pipeline_or_job/:selector/:tab?',
   ]);
 
   const active = tabForPipelinePathComponent(match!.params.tab);
   const explorerPath = explorerPathFromString(match!.params.selector);
-  const {pipelineName, pipelineMode, snapshotId} = explorerPath;
+  const {pipelineName, snapshotId} = explorerPath;
+  const isJob = isThisThingAJob(repo, pipelineName);
   const partitionSets = repo?.repository.partitionSets || [];
 
   // If using pipeline:mode tuple (crag flag), check for partition sets that are for this specific
   // pipeline:mode tuple. Otherwise, just check for a pipeline name match.
   const hasPartitionSet = partitionSets.some(
-    (partitionSet) =>
-      partitionSet.pipelineName === pipelineName &&
-      (!flagPipelineModeTuples || partitionSet.mode === pipelineMode),
+    (partitionSet) => partitionSet.pipelineName === pipelineName,
   );
 
   const tabs = currentOrder
     .filter((key) => hasPartitionSet || key !== 'partitions')
-    .map(tabForKey(repoAddress, explorerPath));
+    .map(tabForKey(repoAddress, isJob, explorerPath));
 
   return (
-    <Group direction="column" spacing={12} padding={{top: 20, horizontal: 20}}>
+    <>
       <PageHeader
-        title={
-          <Heading>
-            {pipelineName}
-            {flagPipelineModeTuples && pipelineMode !== 'default' ? (
-              <span style={{opacity: 0.5}}> : {pipelineMode}</span>
-            ) : null}
-          </Heading>
+        title={<Heading>{pipelineName}</Heading>}
+        tags={
+          <Box flex={{direction: 'row', alignItems: 'center', gap: 8, wrap: 'wrap'}}>
+            <TagWIP icon="job">
+              {isJob ? 'Job in ' : 'Pipeline in '}
+              <RepositoryLink repoAddress={repoAddress} />
+            </TagWIP>
+            {snapshotId ? null : (
+              <JobMetadata pipelineName={pipelineName} repoAddress={repoAddress} />
+            )}
+          </Box>
         }
-        icon={flagPipelineModeTuples ? 'send-to-graph' : 'diagram-tree'}
-        description={
-          <>
-            <Link
-              to={workspacePathFromAddress(
-                repoAddress,
-                flagPipelineModeTuples ? '/jobs' : '/pipelines',
-              )}
-            >
-              {flagPipelineModeTuples ? 'Job' : 'Pipeline'}
-            </Link>{' '}
-            in <RepositoryLink repoAddress={repoAddress} />
-          </>
-        }
-        metadata={
-          snapshotId ? null : (
-            <JobMetadata
-              pipelineName={pipelineName}
-              pipelineMode={pipelineMode}
-              repoAddress={repoAddress}
-            />
-          )
+        tabs={
+          <Tabs size="large" selectedTabId={active.title}>
+            {tabs.map((tab) => {
+              const {href, text, isAvailable} = tab;
+              const disabled = isAvailable && !isAvailable(permissions);
+              const title = disabled ? (
+                <Tooltip content={DISABLED_MESSAGE} placement="top">
+                  {text}
+                </Tooltip>
+              ) : (
+                text
+              );
+              return <Tab key={text} id={text} title={title} disabled={disabled} to={href} />;
+            })}
+          </Tabs>
         }
       />
-      <Box border={{side: 'bottom', width: 1, color: Colors.LIGHT_GRAY3}}>
-        <Tabs large={false} selectedTabId={active.title}>
-          {tabs.map((tab) => {
-            const {href, text, isAvailable} = tab;
-            const disabled = isAvailable && !isAvailable(permissions);
-            const title = disabled ? (
-              <Tooltip content={DISABLED_MESSAGE} placement="top">
-                {text}
-              </Tooltip>
-            ) : (
-              <Link to={href}>{text}</Link>
-            );
-            return <Tab key={text} id={text} title={title} disabled={disabled} />;
-          })}
-        </Tabs>
-      </Box>
-    </Group>
+    </>
   );
 };

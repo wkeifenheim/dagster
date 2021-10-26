@@ -1,18 +1,22 @@
 import {gql} from '@apollo/client';
-import {Breadcrumbs, Checkbox, Colors, Icon, InputGroup, NonIdealState} from '@blueprintjs/core';
+import {Breadcrumbs} from '@blueprintjs/core';
 import Color from 'color';
 import * as querystring from 'query-string';
 import * as React from 'react';
 import {Route} from 'react-router-dom';
 import styled from 'styled-components/macro';
 
-import {useFeatureFlags} from '../app/Flags';
 import {filterByQuery} from '../app/GraphQueryImpl';
 import {PIPELINE_GRAPH_SOLID_FRAGMENT} from '../graph/PipelineGraph';
 import {PipelineGraphContainer} from '../graph/PipelineGraphContainer';
 import {SolidNameOrPath} from '../solids/SolidNameOrPath';
+import {Checkbox} from '../ui/Checkbox';
+import {ColorsWIP} from '../ui/Colors';
 import {GraphQueryInput} from '../ui/GraphQueryInput';
+import {IconWIP} from '../ui/Icon';
+import {NonIdealState} from '../ui/NonIdealState';
 import {SplitPanelContainer} from '../ui/SplitPanelContainer';
+import {TextInput} from '../ui/TextInput';
 import {RepoAddress} from '../workspace/types';
 
 import {SolidJumpBar} from './PipelineJumpComponents';
@@ -39,6 +43,7 @@ interface PipelineExplorerProps {
   selectedHandle?: PipelineExplorerSolidHandleFragment;
   parentHandle?: PipelineExplorerSolidHandleFragment;
   getInvocations?: (definitionName: string) => {handleID: string}[];
+  isGraph: boolean;
 }
 
 export const PipelineExplorer: React.FC<PipelineExplorerProps> = (props) => {
@@ -53,9 +58,9 @@ export const PipelineExplorer: React.FC<PipelineExplorerProps> = (props) => {
     selectedHandle,
     setOptions,
     repoAddress,
+    isGraph,
   } = props;
   const [highlighted, setHighlighted] = React.useState('');
-  const {flagPipelineModeTuples} = useFeatureFlags();
 
   const handleQueryChange = (solidsQuery: string) => {
     onChangeExplorerPath({...explorerPath, solidsQuery}, 'replace');
@@ -138,7 +143,7 @@ export const PipelineExplorer: React.FC<PipelineExplorerProps> = (props) => {
     all,
   ]);
 
-  const backgroundColor = parentHandle ? Colors.WHITE : Colors.WHITE;
+  const backgroundColor = parentHandle ? ColorsWIP.White : ColorsWIP.White;
   const backgroundTranslucent = Color(backgroundColor).fade(0.6).toString();
 
   return (
@@ -173,20 +178,19 @@ export const PipelineExplorer: React.FC<PipelineExplorerProps> = (props) => {
               <GraphQueryInput
                 items={solids}
                 value={explorerPath.solidsQuery}
-                placeholder={flagPipelineModeTuples ? 'Type an op subset' : 'Type a solid subset'}
+                placeholder="Type an op subset…"
                 onChange={handleQueryChange}
               />
             </PipelineGraphQueryInputContainer>
           )}
 
           <SearchOverlay style={{background: backgroundTranslucent}}>
-            <SolidHighlightInput
-              type="text"
+            <TextInput
               name="highlighted"
-              leftIcon="search"
+              icon="search"
               value={highlighted}
-              placeholder="Highlight..."
-              onChange={(e: React.ChangeEvent<any>) => setHighlighted(e.target.value)}
+              placeholder="Highlight…"
+              onChange={(e) => setHighlighted(e.target.value)}
             />
           </SearchOverlay>
           {explodeCompositesEnabled && (
@@ -204,7 +208,7 @@ export const PipelineExplorer: React.FC<PipelineExplorerProps> = (props) => {
               />
             </OptionsOverlay>
           )}
-          {solids.length === 0 ? <EmptyDAGNotice /> : null}
+          {solids.length === 0 ? <EmptyDAGNotice isGraph={isGraph} /> : null}
           {solids.length > 0 &&
             queryResultSolids.all.length === 0 &&
             !explorerPath.solidsQuery.length && <LargeDAGNotice />}
@@ -275,7 +279,7 @@ const RightInfoPanel = styled.div`
 
   height: 100%;
   overflow-y: scroll;
-  background: ${Colors.WHITE};
+  background: ${ColorsWIP.White};
 `;
 
 const OptionsOverlay = styled.div`
@@ -308,12 +312,6 @@ const PathOverlay = styled.div`
   left: 0;
 `;
 
-const SolidHighlightInput = styled(InputGroup)`
-  margin-left: 7px;
-  font-size: 14px;
-  width: 220px;
-`;
-
 const LargeDAGNotice = () => (
   <LargeDAGContainer>
     <LargeDAGInstructionBox>
@@ -333,19 +331,18 @@ const LargeDAGNotice = () => (
         </li>
       </ul>
     </LargeDAGInstructionBox>
-    <Icon icon="arrow-down" iconSize={40} />
+    <IconWIP name="arrow_downward" size={24} />
   </LargeDAGContainer>
 );
 
-const EmptyDAGNotice = () => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
+const EmptyDAGNotice: React.FC<{isGraph: boolean}> = ({isGraph}) => {
   return (
     <NonIdealState
-      icon="diagram-tree"
-      title={flagPipelineModeTuples ? 'Empty graph' : 'Empty pipeline'}
+      icon="no-results"
+      title={isGraph ? 'Empty graph' : 'Empty pipeline'}
       description={
         <>
-          <div>This {flagPipelineModeTuples ? 'graph' : 'pipeline'} is empty.</div>
+          <div>This {isGraph ? 'graph' : 'pipeline'} is empty.</div>
           <div>Solids will appear here when you add them.</div>
         </>
       }
@@ -363,7 +360,7 @@ const LargeDAGContainer = styled.div`
   max-width: 600px;
   text-align: center;
   .bp3-icon {
-    color: ${Colors.LIGHT_GRAY1};
+    color: ${ColorsWIP.Gray200};
   }
 `;
 
@@ -371,7 +368,7 @@ const LargeDAGInstructionBox = styled.div`
   padding: 15px 20px;
   border: 1px solid #fff5c3;
   margin-bottom: 20px;
-  color: ${Colors.DARK_GRAY3};
+  color: ${ColorsWIP.Gray800};
   background: #fffbe5;
   text-align: left;
   line-height: 1.4rem;

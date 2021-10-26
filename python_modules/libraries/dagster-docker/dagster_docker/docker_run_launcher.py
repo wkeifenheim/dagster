@@ -2,12 +2,18 @@ import json
 import os
 
 import docker
-from dagster import Array, Field, Permissive, StringSource, check
-from dagster.core.launcher.base import LaunchRunContext, RunLauncher
+from dagster import check
+from dagster.core.launcher.base import (
+    CheckRunHealthResult,
+    LaunchRunContext,
+    RunLauncher,
+    WorkerStatus,
+)
+from dagster.core.storage.pipeline_run import PipelineRun
 from dagster.core.storage.tags import DOCKER_IMAGE_TAG
-from dagster.grpc.types import ExecuteRunArgs
+from dagster.grpc.types import ExecuteRunArgs, ResumeRunArgs
 from dagster.serdes import ConfigurableClass, serialize_dagster_namedtuple
-from docker_image import reference
+from dagster_docker.utils import DOCKER_CONFIG_SCHEMA, validate_docker_config, validate_docker_image
 
 DOCKER_CONTAINER_ID_TAG = "docker/container_id"
 
@@ -41,35 +47,22 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
         container_kwargs=None,
     ):
         self._inst_data = inst_data
-        self._image = image
-        self._registry = registry
-        self._env_vars = env_vars
-        if network:
-            check.invariant(not networks, "cannot set both `network` and `networks`")
-            self._networks = [network]
-        elif networks:
-            self._networks = networks
-        else:
-            self._networks = []
+        self.image = image
+        self.registry = registry
+        self.env_vars = env_vars
 
-        self._container_kwargs = check.opt_dict_param(
+        validate_docker_config(network, networks, container_kwargs)
+
+        if network:
+            self.networks = [network]
+        elif networks:
+            self.networks = networks
+        else:
+            self.networks = []
+
+        self.container_kwargs = check.opt_dict_param(
             container_kwargs, "container_kwargs", key_type=str
         )
-
-        if "image" in self._container_kwargs:
-            raise Exception(
-                "'image' cannot be used in 'container_kwargs'. Use the 'image' config key instead."
-            )
-
-        if "environment" in self._container_kwargs and env_vars:
-            raise Exception(
-                "Cannot specify both `env_vars` in DockerRunLauncher config and `environment` in `container_kwargs`. Choose one or the other."
-            )
-
-        if "network" in self._container_kwargs and self._networks:
-            raise Exception(
-                "Cannot specify both `networks` in DockerRunLauncher config and `network` in `container_kwargs`. Choose one or the other."
-            )
 
         super().__init__()
 
@@ -79,44 +72,7 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
 
     @classmethod
     def config_type(cls):
-        return {
-            "image": Field(
-                StringSource,
-                is_required=False,
-                description="The docker image to be used if the repository does not specify one.",
-            ),
-            "registry": Field(
-                {
-                    "url": Field(StringSource),
-                    "username": Field(StringSource),
-                    "password": Field(StringSource),
-                },
-                is_required=False,
-                description="Information for using a non local/public docker registry",
-            ),
-            "env_vars": Field(
-                [str],
-                is_required=False,
-                description="The list of environment variables names to forward to the docker container",
-            ),
-            "network": Field(
-                StringSource,
-                is_required=False,
-                description="Name of the network to which to connect the launched container at creation time",
-            ),
-            "networks": Field(
-                Array(StringSource),
-                is_required=False,
-                description="Names of the networks to which to connect the launched container at creation time",
-            ),
-            "container_kwargs": Field(
-                Permissive(),
-                is_required=False,
-                description="key-value pairs that can be passed into containers.create. See "
-                "https://docker-py.readthedocs.io/en/stable/containers.html for the full list "
-                "of available options.",
-            ),
-        }
+        return DOCKER_CONFIG_SCHEMA
 
     @staticmethod
     def from_config_value(inst_data, config_value):
@@ -124,11 +80,11 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
 
     def _get_client(self):
         client = docker.client.from_env()
-        if self._registry:
+        if self.registry:
             client.login(
-                registry=self._registry["url"],
-                username=self._registry["username"],
-                password=self._registry["password"],
+                registry=self.registry["url"],
+                username=self.registry["username"],
+                password=self.registry["password"],
             )
         return client
 
@@ -141,33 +97,34 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
         docker_image = pipeline_code_origin.repository_origin.container_image
 
         if not docker_image:
-            docker_image = self._image
+            docker_image = self.image
 
         if not docker_image:
             raise Exception("No docker image specified by the instance config or repository")
 
-        try:
-            # validate that the docker image name is valid
-            reference.Reference.parse(docker_image)
-        except Exception as e:
-            raise Exception(
-                "Docker image name {docker_image} is not correctly formatted".format(
-                    docker_image=docker_image
+        validate_docker_image(docker_image)
+
+        if not context.resume_from_failure:
+            input_json = serialize_dagster_namedtuple(
+                ExecuteRunArgs(
+                    pipeline_origin=pipeline_code_origin,
+                    pipeline_run_id=run.run_id,
+                    instance_ref=self._instance.get_ref(),
                 )
-            ) from e
-
-        input_json = serialize_dagster_namedtuple(
-            ExecuteRunArgs(
-                pipeline_origin=pipeline_code_origin,
-                pipeline_run_id=run.run_id,
-                instance_ref=self._instance.get_ref(),
             )
-        )
-
-        command = "dagster api execute_run {}".format(json.dumps(input_json))
+            command = "dagster api execute_run {}".format(json.dumps(input_json))
+        else:
+            input_json = serialize_dagster_namedtuple(
+                ResumeRunArgs(
+                    pipeline_origin=pipeline_code_origin,
+                    pipeline_run_id=run.run_id,
+                    instance_ref=self._instance.get_ref(),
+                )
+            )
+            command = "dagster api resume_run {}".format(json.dumps(input_json))
 
         docker_env = (
-            {env_name: os.getenv(env_name) for env_name in self._env_vars} if self._env_vars else {}
+            {env_name: os.getenv(env_name) for env_name in self.env_vars} if self.env_vars else {}
         )
 
         client = self._get_client()
@@ -178,8 +135,8 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
                 command=command,
                 detach=True,
                 environment=docker_env,
-                network=self._networks[0] if len(self._networks) else None,
-                **self._container_kwargs,
+                network=self.networks[0] if len(self.networks) else None,
+                **self.container_kwargs,
             )
 
         except docker.errors.ImageNotFound:
@@ -189,12 +146,12 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
                 command=command,
                 detach=True,
                 environment=docker_env,
-                network=self._networks[0] if len(self._networks) else None,
-                **self._container_kwargs,
+                network=self.networks[0] if len(self.networks) else None,
+                **self.container_kwargs,
             )
 
-        if len(self._networks) > 1:
-            for network_name in self._networks[1:]:
+        if len(self.networks) > 1:
+            for network_name in self.networks[1:]:
                 network = client.networks.get(network_name)
                 network.connect(container)
 
@@ -249,3 +206,17 @@ class DockerRunLauncher(RunLauncher, ConfigurableClass):
         container.stop()
 
         return True
+
+    @property
+    def supports_check_run_worker_health(self):
+        return True
+
+    def check_run_worker_health(self, run: PipelineRun):
+        container = self._get_container(run)
+        if container == None:
+            return CheckRunHealthResult(WorkerStatus.NOT_FOUND)
+        if container.status == "running":
+            return CheckRunHealthResult(WorkerStatus.RUNNING)
+        return CheckRunHealthResult(
+            WorkerStatus.FAILED, msg=f"Container status is {container.status}"
+        )

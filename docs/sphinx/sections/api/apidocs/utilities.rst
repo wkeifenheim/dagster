@@ -19,6 +19,10 @@ Utilities
 
 .. currentmodule:: dagster.utils
 
+.. autofunction:: make_email_on_run_failure_sensor
+
 .. autofunction:: make_email_on_pipeline_failure_sensor
 
-.. autofunction:: make_email_on_job_failure_sensor
+.. currentmodule:: dagster.utils.log
+
+.. autofunction:: get_dagster_logger

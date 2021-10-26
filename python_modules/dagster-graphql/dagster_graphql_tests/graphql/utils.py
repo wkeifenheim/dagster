@@ -29,6 +29,7 @@ def get_all_logs_for_finished_run_via_subscription(context, run_id):
     # remove information that changes run-to-run
     assert "pipelineRunLogs" in subscribe_result.data
     assert "messages" in subscribe_result.data["pipelineRunLogs"]
+    assert subscribe_result.data["pipelineRunLogs"]["hasMorePastEvents"] is False
     for msg in subscribe_result.data["pipelineRunLogs"]["messages"]:
         msg["runId"] = "<runId dummy value>"
         msg["timestamp"] = "<timestamp dummy value>"
@@ -45,7 +46,7 @@ def sync_execute_get_payload(variables, context):
 
     assert result.data
 
-    if result.data["launchPipelineExecution"]["__typename"] != "LaunchPipelineRunSuccess":
+    if result.data["launchPipelineExecution"]["__typename"] != "LaunchRunSuccess":
         raise Exception(result.data)
 
     context.instance.run_launcher.join()

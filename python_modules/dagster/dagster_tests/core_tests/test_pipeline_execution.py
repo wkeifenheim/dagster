@@ -19,7 +19,6 @@ from dagster import (
     check,
     execute_pipeline,
     execute_pipeline_iterator,
-    fs_io_manager,
     pipeline,
     reconstructable,
     reexecute_pipeline,
@@ -31,7 +30,11 @@ from dagster.core.definitions.graph import _create_adjacency_lists
 from dagster.core.errors import DagsterExecutionStepNotFoundError, DagsterInvariantViolationError
 from dagster.core.execution.results import SolidExecutionResult
 from dagster.core.instance import DagsterInstance
-from dagster.core.test_utils import instance_for_test, step_output_event_filter
+from dagster.core.test_utils import (
+    default_mode_def_for_test,
+    instance_for_test,
+    step_output_event_filter,
+)
 from dagster.core.utility_solids import (
     create_root_solid,
     create_solid_with_deps,
@@ -722,19 +725,16 @@ def test_reexecution_fs_storage():
         solid_defs=[return_one, add_one],
         name="test",
         dependencies={"add_one": {"num": DependencyDefinition("return_one")}},
+        mode_defs=[default_mode_def_for_test],
     )
-    run_config = {"storage": {"filesystem": {}}}
     instance = DagsterInstance.ephemeral()
-    pipeline_result = execute_pipeline(
-        pipeline_def, run_config={"storage": {"filesystem": {}}}, instance=instance
-    )
+    pipeline_result = execute_pipeline(pipeline_def, instance=instance)
     assert pipeline_result.success
     assert pipeline_result.result_for_solid("add_one").output_value() == 2
 
     reexecution_result = reexecute_pipeline(
         pipeline_def,
         pipeline_result.run_id,
-        run_config=run_config,
         instance=instance,
     )
 
@@ -749,7 +749,6 @@ def test_reexecution_fs_storage():
     grandchild_result = reexecute_pipeline(
         pipeline_def,
         reexecution_result.run_id,
-        run_config=run_config,
         instance=instance,
     )
 
@@ -781,7 +780,7 @@ def retry_pipeline():
         solid_defs=[return_one, add_one],
         name="test",
         dependencies={"add_one": {"num": DependencyDefinition("return_one")}},
-        mode_defs=[ModeDefinition(resource_defs={"io_manager": fs_io_manager})],
+        mode_defs=[default_mode_def_for_test],
     )
 
 
@@ -843,11 +842,11 @@ def test_reexecution_fs_storage_with_solid_selection():
         solid_defs=[return_one, add_one],
         name="test",
         dependencies={"add_one": {"num": DependencyDefinition("return_one")}},
+        mode_defs=[default_mode_def_for_test],
     )
-    run_config = {"storage": {"filesystem": {}}}
     instance = DagsterInstance.ephemeral()
     # Case 1: re-execute a part of a pipeline when the original pipeline doesn't have solid selection
-    pipeline_result = execute_pipeline(pipeline_def, run_config, instance=instance)
+    pipeline_result = execute_pipeline(pipeline_def, instance=instance)
     assert pipeline_result.success
     assert pipeline_result.result_for_solid("add_one").output_value() == 2
 
@@ -855,7 +854,6 @@ def test_reexecution_fs_storage_with_solid_selection():
     reexecution_result_no_solid_selection = reexecute_pipeline(
         pipeline_def,
         parent_run_id=pipeline_result.run_id,
-        run_config=run_config,
         step_selection=["return_one"],
         instance=instance,
     )
@@ -867,7 +865,6 @@ def test_reexecution_fs_storage_with_solid_selection():
     # Case 2: re-execute a pipeline when the original pipeline has solid selection
     pipeline_result_solid_selection = execute_pipeline(
         pipeline_def,
-        run_config=run_config,
         instance=instance,
         solid_selection=["return_one"],
     )
@@ -880,7 +877,6 @@ def test_reexecution_fs_storage_with_solid_selection():
     reexecution_result_solid_selection = reexecute_pipeline(
         pipeline_def,
         parent_run_id=pipeline_result_solid_selection.run_id,
-        run_config=run_config,
         instance=instance,
     )
 
@@ -899,7 +895,6 @@ def test_reexecution_fs_storage_with_solid_selection():
         reexecute_pipeline(
             pipeline_def,
             parent_run_id=pipeline_result_solid_selection.run_id,
-            run_config=run_config,
             step_selection=["add_one"],
             instance=instance,
         )
@@ -909,7 +904,6 @@ def test_reexecution_fs_storage_with_solid_selection():
     re_reexecution_result = reexecute_pipeline(
         pipeline_def,
         parent_run_id=reexecution_result_solid_selection.run_id,
-        run_config=run_config,
         instance=instance,
         step_selection=["return_one"],
     )
@@ -932,10 +926,10 @@ def test_single_step_reexecution():
         solid_defs=[return_one, add_one],
         name="test",
         dependencies={"add_one": {"num": DependencyDefinition("return_one")}},
+        mode_defs=[default_mode_def_for_test],
     )
-    run_config = {"storage": {"filesystem": {}}}
     instance = DagsterInstance.ephemeral()
-    pipeline_result = execute_pipeline(pipeline_def, run_config, instance=instance)
+    pipeline_result = execute_pipeline(pipeline_def, instance=instance)
     assert pipeline_result.success
     assert pipeline_result.result_for_solid("add_one").output_value() == 2
 
@@ -943,7 +937,6 @@ def test_single_step_reexecution():
     reexecution_result = reexecute_pipeline(
         pipeline_def,
         parent_run_id=pipeline_result.run_id,
-        run_config=run_config,
         instance=instance,
         step_selection=["add_one"],
     )
@@ -962,20 +955,19 @@ def test_two_step_reexecution():
     def add_one(num):
         return num + 1
 
-    @pipeline
+    @pipeline(mode_defs=[default_mode_def_for_test])
     def two_step_reexec():
         add_one(add_one(return_one()))
 
     instance = DagsterInstance.ephemeral()
-    run_config = {"storage": {"filesystem": {}}}
-    pipeline_result = execute_pipeline(two_step_reexec, run_config=run_config, instance=instance)
+
+    pipeline_result = execute_pipeline(two_step_reexec, instance=instance)
     assert pipeline_result.success
     assert pipeline_result.result_for_solid("add_one_2").output_value() == 3
 
     reexecution_result = reexecute_pipeline(
         two_step_reexec,
         parent_run_id=pipeline_result.run_id,
-        run_config=run_config,
         instance=instance,
         step_selection=["add_one", "add_one_2"],
     )

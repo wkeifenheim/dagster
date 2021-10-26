@@ -4,36 +4,11 @@
 // @generated
 // This file was automatically generated and should not be edited.
 
-import { ScheduleSelector, InstigationType, InstigationStatus, PipelineRunStatus, InstigationTickStatus } from "./../../types/globalTypes";
+import { ScheduleSelector, InstigationType, InstigationStatus, RunStatus, InstigationTickStatus } from "./../../types/globalTypes";
 
 // ====================================================
 // GraphQL query operation: ScheduleRootQuery
 // ====================================================
-
-export interface ScheduleRootQuery_scheduler_SchedulerNotDefinedError {
-  __typename: "SchedulerNotDefinedError";
-  message: string;
-}
-
-export interface ScheduleRootQuery_scheduler_Scheduler {
-  __typename: "Scheduler";
-  schedulerClass: string | null;
-}
-
-export interface ScheduleRootQuery_scheduler_PythonError_cause {
-  __typename: "PythonError";
-  message: string;
-  stack: string[];
-}
-
-export interface ScheduleRootQuery_scheduler_PythonError {
-  __typename: "PythonError";
-  message: string;
-  stack: string[];
-  cause: ScheduleRootQuery_scheduler_PythonError_cause | null;
-}
-
-export type ScheduleRootQuery_scheduler = ScheduleRootQuery_scheduler_SchedulerNotDefinedError | ScheduleRootQuery_scheduler_Scheduler | ScheduleRootQuery_scheduler_PythonError;
 
 export interface ScheduleRootQuery_scheduleOrError_Schedule_partitionSet {
   __typename: "PartitionSet";
@@ -68,10 +43,10 @@ export interface ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_typeSp
 export type ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_typeSpecificData = ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_typeSpecificData_SensorData | ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_typeSpecificData_ScheduleData;
 
 export interface ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_runs {
-  __typename: "PipelineRun";
+  __typename: "Run";
   id: string;
   runId: string;
-  status: PipelineRunStatus;
+  status: RunStatus;
 }
 
 export interface ScheduleRootQuery_scheduleOrError_Schedule_scheduleState_ticks_error_cause {
@@ -183,7 +158,6 @@ export interface ScheduleRootQuery_instance {
 }
 
 export interface ScheduleRootQuery {
-  scheduler: ScheduleRootQuery_scheduler;
   scheduleOrError: ScheduleRootQuery_scheduleOrError;
   instance: ScheduleRootQuery_instance;
 }

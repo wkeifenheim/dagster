@@ -1,23 +1,20 @@
 import {gql, useQuery} from '@apollo/client';
-import {Colors, Divider, NonIdealState, Tab, Tabs, Tag} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
 import isEqual from 'lodash/isEqual';
 import * as React from 'react';
-import {RouteComponentProps, Link} from 'react-router-dom';
-import styled from 'styled-components/macro';
+import {Link, RouteComponentProps} from 'react-router-dom';
 
-import {useFeatureFlags} from '../app/Flags';
 import {QueryCountdown} from '../app/QueryCountdown';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
-import {PipelineRunStatus} from '../types/globalTypes';
+import {RunStatus} from '../types/globalTypes';
 import {Alert} from '../ui/Alert';
 import {Box} from '../ui/Box';
-import {ButtonLink} from '../ui/ButtonLink';
-import {CursorPaginationControls} from '../ui/CursorControls';
-import {Group} from '../ui/Group';
+import {ColorsWIP} from '../ui/Colors';
+import {CursorHistoryControls} from '../ui/CursorControls';
 import {Loading} from '../ui/Loading';
+import {NonIdealState} from '../ui/NonIdealState';
 import {Page} from '../ui/Page';
 import {PageHeader} from '../ui/PageHeader';
+import {Tab, Tabs} from '../ui/Tabs';
 import {Heading} from '../ui/Text';
 import {TokenizingFieldValue} from '../ui/TokenizingField';
 
@@ -27,11 +24,10 @@ import {RunTable, RUN_TABLE_RUN_FRAGMENT} from './RunTable';
 import {RunsQueryRefetchContext} from './RunUtils';
 import {
   RunFilterTokenType,
-  RunsFilter,
+  RunsFilterInput,
   runsFilterForSearchTokens,
   useQueryPersistedRunFilters,
-} from './RunsFilter';
-import {CountFragment} from './types/CountFragment';
+} from './RunsFilterInput';
 import {QueueDaemonStatusQuery} from './types/QueueDaemonStatusQuery';
 import {RunsRootQuery, RunsRootQueryVariables} from './types/RunsRootQuery';
 import {POLL_INTERVAL, useCursorPaginatedQuery} from './useCursorPaginatedQuery';
@@ -59,20 +55,19 @@ export const RunsRoot: React.FC<RouteComponentProps> = () => {
   const [filterTokens, setFilterTokens] = useQueryPersistedRunFilters();
   const filter = runsFilterForSearchTokens(filterTokens);
   const [showScheduled, setShowScheduled] = React.useState(false);
-  const {flagPipelineModeTuples} = useFeatureFlags();
 
   const {queryResult, paginationProps} = useCursorPaginatedQuery<
     RunsRootQuery,
     RunsRootQueryVariables
   >({
     nextCursorForResult: (runs) => {
-      if (runs.pipelineRunsOrError.__typename !== 'PipelineRuns') {
+      if (runs.pipelineRunsOrError.__typename !== 'Runs') {
         return undefined;
       }
       return runs.pipelineRunsOrError.results[PAGE_SIZE - 1]?.runId;
     },
     getResultArray: (data) => {
-      if (!data || data.pipelineRunsOrError.__typename !== 'PipelineRuns') {
+      if (!data || data.pipelineRunsOrError.__typename !== 'Runs') {
         return [];
       }
       return data.pipelineRunsOrError.results;
@@ -86,7 +81,7 @@ export const RunsRoot: React.FC<RouteComponentProps> = () => {
     pageSize: PAGE_SIZE,
   });
 
-  const setStatusFilter = (statuses: PipelineRunStatus[]) => {
+  const setStatusFilter = (statuses: RunStatus[]) => {
     const tokensMinusStatus = filterTokens.filter((token) => token.token !== 'status');
     const statusTokens = statuses.map((status) => ({token: 'status', value: status}));
     setFilterTokens([...statusTokens, ...tokensMinusStatus]);
@@ -94,170 +89,120 @@ export const RunsRoot: React.FC<RouteComponentProps> = () => {
   };
 
   const selectedTab = showScheduled ? 'scheduled' : selectedTabId(filterTokens);
-  const tabColor = (match: string) =>
-    selectedTab === match ? Colors.BLUE1 : {link: Colors.GRAY2, hover: Colors.BLUE1};
-  const enabledFilters: RunFilterTokenType[] = flagPipelineModeTuples
-    ? ['status', 'tag', 'snapshotId', 'id', 'job']
-    : ['status', 'tag', 'snapshotId', 'id', 'pipeline'];
+  const enabledFilters: RunFilterTokenType[] = [
+    'status',
+    'tag',
+    'snapshotId',
+    'id',
+    'job',
+    'pipeline',
+  ];
 
   return (
-    <Page style={{height: '100%'}}>
-      <Group direction="column" spacing={8}>
-        <PageHeader title={<Heading>Runs</Heading>} />
-        <Box
-          border={{side: 'bottom', width: 1, color: Colors.LIGHT_GRAY3}}
-          flex={{direction: 'row', justifyContent: 'space-between', alignItems: 'flex-end'}}
-        >
-          <Tabs selectedTabId={selectedTab} id="run-tabs">
-            <Tab
-              title={
-                <TabButton
-                  color={tabColor('all')}
-                  underline="never"
-                  onClick={() => setStatusFilter([])}
-                >
-                  All runs
-                </TabButton>
-              }
-              id="all"
-            />
-            <Tab
-              title={
-                <TabButton
-                  color={tabColor('queued')}
-                  underline="never"
-                  onClick={() => setStatusFilter(Array.from(queuedStatuses))}
-                >
-                  <Group direction="row" spacing={4} alignItems="center">
-                    <div>Queued</div>
-                    <CountTag
-                      loading={queryResult.loading && !queryResult.data}
-                      fragment={
-                        queryResult.data?.queuedCount?.__typename === 'PipelineRuns'
-                          ? queryResult.data?.queuedCount
-                          : undefined
-                      }
-                    />
-                  </Group>
-                </TabButton>
-              }
-              id="queued"
-            />
-            <Tab
-              title={
-                <TabButton
-                  color={tabColor('in-progress')}
-                  underline="never"
-                  onClick={() => setStatusFilter(Array.from(inProgressStatuses))}
-                >
-                  <Group direction="row" spacing={4} alignItems="center">
-                    <div>In progress</div>
-                    <CountTag
-                      loading={queryResult.loading && !queryResult.data}
-                      fragment={
-                        queryResult.data?.inProgressCount?.__typename === 'PipelineRuns'
-                          ? queryResult.data?.inProgressCount
-                          : undefined
-                      }
-                    />
-                  </Group>
-                </TabButton>
-              }
-              id="in-progress"
-            />
-            <Tab
-              title={
-                <TabButton
-                  color={tabColor('done')}
-                  underline="never"
-                  onClick={() => setStatusFilter(Array.from(doneStatuses))}
-                >
-                  Done
-                </TabButton>
-              }
-              id="done"
-            />
-            <div style={{display: 'flex', alignSelf: 'stretch'}}>
-              <Divider style={{margin: '6px 0px'}} />
-            </div>
-            <Tab
-              title={
-                <TabButton
-                  color={tabColor('scheduled')}
-                  underline="never"
-                  onClick={() => setShowScheduled(true)}
-                >
-                  Scheduled
-                </TabButton>
-              }
-              id="scheduled"
-            />
-          </Tabs>
-          <Box padding={{bottom: 8}}>
-            <QueryCountdown pollInterval={POLL_INTERVAL} queryResult={queryResult} />
+    <Page>
+      <PageHeader
+        title={<Heading>Runs</Heading>}
+        tabs={
+          <Box flex={{direction: 'row', justifyContent: 'space-between', alignItems: 'flex-end'}}>
+            <Tabs selectedTabId={selectedTab} id="run-tabs">
+              <Tab title="All runs" onClick={() => setStatusFilter([])} id="all" />
+              <Tab
+                title="Queued"
+                count={
+                  queryResult.data?.queuedCount?.__typename === 'Runs'
+                    ? queryResult.data?.queuedCount.count
+                    : 'indeterminate'
+                }
+                onClick={() => setStatusFilter(Array.from(queuedStatuses))}
+                id="queued"
+              />
+              <Tab
+                title="In progress"
+                count={
+                  queryResult.data?.inProgressCount?.__typename === 'Runs'
+                    ? queryResult.data?.inProgressCount.count
+                    : 'indeterminate'
+                }
+                onClick={() => setStatusFilter(Array.from(inProgressStatuses))}
+                id="in-progress"
+              />
+              <Tab
+                title="Done"
+                onClick={() => setStatusFilter(Array.from(doneStatuses))}
+                id="done"
+              />
+              <Tab title="Scheduled" onClick={() => setShowScheduled(true)} id="scheduled" />
+            </Tabs>
+            <Box padding={{bottom: 8}}>
+              <QueryCountdown pollInterval={POLL_INTERVAL} queryResult={queryResult} />
+            </Box>
           </Box>
-        </Box>
-        {showScheduled ? null : (
-          <RunsFilter
-            tokens={filterTokens}
-            onChange={setFilterTokens}
-            loading={queryResult.loading}
-            enabledFilters={enabledFilters}
+        }
+      />
+      {selectedTab === 'queued' ? (
+        <Box
+          flex={{direction: 'column', gap: 8}}
+          padding={{horizontal: 24, vertical: 16}}
+          border={{side: 'bottom', width: 1, color: ColorsWIP.KeylineGray}}
+        >
+          <Alert
+            intent="info"
+            title={<Link to="/instance/config#run_coordinator">View queue configuration</Link>}
           />
-        )}
-        {selectedTab === 'queued' ? (
-          <Group direction="column" spacing={8}>
-            <Alert
-              intent="info"
-              title={<Link to="/instance/config#run_coordinator">View queue configuration</Link>}
-            />
-            <QueueDaemonAlert />
-          </Group>
-        ) : null}
-        <RunsQueryRefetchContext.Provider value={{refetch: queryResult.refetch}}>
-          <Loading queryResult={queryResult} allowStaleData={true}>
-            {({pipelineRunsOrError}) => {
-              if (pipelineRunsOrError.__typename !== 'PipelineRuns') {
-                return (
+          <QueueDaemonAlert />
+        </Box>
+      ) : null}
+      <RunsQueryRefetchContext.Provider value={{refetch: queryResult.refetch}}>
+        <Loading queryResult={queryResult} allowStaleData={true}>
+          {({pipelineRunsOrError}) => {
+            if (pipelineRunsOrError.__typename !== 'Runs') {
+              return (
+                <Box padding={{vertical: 64}}>
                   <NonIdealState
-                    icon={IconNames.ERROR}
+                    icon="error"
                     title="Query Error"
                     description={pipelineRunsOrError.message}
                   />
-                );
-              }
-
-              if (showScheduled) {
-                return (
-                  <Box margin={{top: 4}}>
-                    <AllScheduledTicks />
-                  </Box>
-                );
-              }
-
-              return (
-                <>
-                  <RunTable
-                    runs={pipelineRunsOrError.results.slice(0, PAGE_SIZE)}
-                    onSetFilter={setFilterTokens}
-                  />
-                  {pipelineRunsOrError.results.length > 0 ? (
-                    <div style={{marginTop: '16px'}}>
-                      <CursorPaginationControls {...paginationProps} />
-                    </div>
-                  ) : null}
-                </>
+                </Box>
               );
-            }}
-          </Loading>
-        </RunsQueryRefetchContext.Provider>
-      </Group>
+            }
+
+            if (showScheduled) {
+              return <AllScheduledTicks />;
+            }
+
+            return (
+              <>
+                <RunTable
+                  runs={pipelineRunsOrError.results.slice(0, PAGE_SIZE)}
+                  onSetFilter={setFilterTokens}
+                  actionBarComponents={
+                    showScheduled ? null : (
+                      <RunsFilterInput
+                        tokens={filterTokens}
+                        onChange={setFilterTokens}
+                        loading={queryResult.loading}
+                        enabledFilters={enabledFilters}
+                      />
+                    )
+                  }
+                />
+                {pipelineRunsOrError.results.length > 0 ? (
+                  <div style={{marginTop: '16px'}}>
+                    <CursorHistoryControls {...paginationProps} />
+                  </div>
+                ) : null}
+              </>
+            );
+          }}
+        </Loading>
+      </RunsQueryRefetchContext.Provider>
     </Page>
   );
 };
 
 const COUNT_FRAGMENT = gql`
-  fragment CountFragment on PipelineRuns {
+  fragment CountFragment on Runs {
     count
   }
 `;
@@ -266,12 +211,12 @@ const RUNS_ROOT_QUERY = gql`
   query RunsRootQuery(
     $limit: Int
     $cursor: String
-    $filter: PipelineRunsFilter!
-    $queuedFilter: PipelineRunsFilter!
-    $inProgressFilter: PipelineRunsFilter!
+    $filter: RunsFilter!
+    $queuedFilter: RunsFilter!
+    $inProgressFilter: RunsFilter!
   ) {
     pipelineRunsOrError(limit: $limit, cursor: $cursor, filter: $filter) {
-      ... on PipelineRuns {
+      ... on Runs {
         results {
           id
           ...RunTableRunFragment
@@ -329,36 +274,4 @@ const QUEUE_DAEMON_STATUS_QUERY = gql`
       }
     }
   }
-`;
-
-const TabButton = styled(ButtonLink)`
-  line-height: 34px;
-`;
-
-interface CountTagProps {
-  loading: boolean;
-  fragment: CountFragment | undefined;
-}
-
-const CountTag = (props: CountTagProps) => {
-  const {loading, fragment} = props;
-  if (loading) {
-    return (
-      <CountTagStyled minimal intent="none">
-        –
-      </CountTagStyled>
-    );
-  }
-  if (typeof fragment?.count === 'number') {
-    return (
-      <CountTagStyled minimal intent="none">
-        {fragment.count}
-      </CountTagStyled>
-    );
-  }
-  return null;
-};
-
-const CountTagStyled = styled(Tag)`
-  min-width: 24px;
 `;

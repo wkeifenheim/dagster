@@ -22,6 +22,7 @@ from dagster import (
     String,
     default_executors,
     file_relative_path,
+    fs_io_manager,
     lambda_solid,
     pipeline,
     repository,
@@ -32,9 +33,8 @@ from dagster.core.definitions.decorators import daily_schedule, schedule
 from dagster.core.test_utils import nesting_composite_pipeline
 from dagster.utils import merge_dicts, segfault
 from dagster.utils.yaml_utils import merge_yamls
-from dagster_aws.s3 import s3_plus_default_intermediate_storage_defs, s3_resource
-from dagster_gcp.gcs.resources import gcs_resource
-from dagster_gcp.gcs.system_storage import gcs_plus_default_intermediate_storage_defs
+from dagster_aws.s3 import s3_pickle_io_manager, s3_resource
+from dagster_gcp.gcs import gcs_pickle_io_manager, gcs_resource
 
 IS_BUILDKITE = bool(os.getenv("BUILDKITE"))
 
@@ -45,8 +45,9 @@ def celery_mode_defs(resources=None):
 
     return [
         ModeDefinition(
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs=resources if resources else {"s3": s3_resource},
+            resource_defs=resources
+            if resources
+            else {"s3": s3_resource, "io_manager": s3_pickle_io_manager},
             executor_defs=default_executors + [celery_executor, celery_k8s_job_executor],
         )
     ]
@@ -58,15 +59,35 @@ def k8s_mode_defs(resources=None, name="default"):
     return [
         ModeDefinition(
             name=name,
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs=resources if resources else {"s3": s3_resource},
+            resource_defs=resources
+            if resources
+            else {"s3": s3_resource, "io_manager": s3_pickle_io_manager},
             executor_defs=default_executors + [k8s_job_executor],
+        )
+    ]
+
+
+def docker_mode_defs():
+    from dagster_docker import docker_executor
+
+    return [
+        ModeDefinition(
+            resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
+            executor_defs=[docker_executor],
         )
     ]
 
 
 @solid(input_defs=[InputDefinition("word", String)], config_schema={"factor": Int})
 def multiply_the_word(context, word):
+    return word * context.solid_config["factor"]
+
+
+@solid(
+    input_defs=[InputDefinition("word", String)], config_schema={"factor": Int, "sleep_time": Int}
+)
+def multiply_the_word_slow(context, word):
+    time.sleep(context.solid_config["sleep_time"])
     return word * context.solid_config["factor"]
 
 
@@ -92,8 +113,7 @@ def hanging_solid(_):
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs={"s3": s3_resource},
+            resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
         )
     ]
 )
@@ -104,13 +124,39 @@ def hanging_pipeline():
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs={"s3": s3_resource},
+            resource_defs={"io_manager": fs_io_manager},
         )
     ]
 )
 def demo_pipeline():
     count_letters(multiply_the_word())
+
+
+@pipeline(
+    mode_defs=[
+        ModeDefinition(
+            resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
+        )
+    ]
+)
+def demo_pipeline_s3():
+    count_letters(multiply_the_word())
+
+
+def define_demo_pipeline_docker():
+    @pipeline(mode_defs=docker_mode_defs())
+    def demo_pipeline_docker():
+        count_letters(multiply_the_word())
+
+    return demo_pipeline_docker
+
+
+def define_demo_pipeline_docker_slow():
+    @pipeline(mode_defs=docker_mode_defs())
+    def demo_pipeline_docker_slow():
+        count_letters(multiply_the_word_slow())
+
+    return demo_pipeline_docker_slow
 
 
 def define_demo_pipeline_celery():
@@ -127,8 +173,7 @@ def define_docker_celery_pipeline():
     @pipeline(
         mode_defs=[
             ModeDefinition(
-                intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-                resource_defs={"s3": s3_resource},
+                resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
                 executor_defs=default_executors + [celery_docker_executor],
             )
         ]
@@ -142,8 +187,7 @@ def define_docker_celery_pipeline():
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            intermediate_storage_defs=gcs_plus_default_intermediate_storage_defs,
-            resource_defs={"gcs": gcs_resource},
+            resource_defs={"gcs": gcs_resource, "io_manager": gcs_pickle_io_manager},
         )
     ]
 )
@@ -154,12 +198,22 @@ def demo_pipeline_gcs():
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs={"s3": s3_resource},
+            resource_defs={"io_manager": fs_io_manager},
         )
     ]
 )
 def demo_error_pipeline():
+    error_solid()
+
+
+@pipeline(
+    mode_defs=[
+        ModeDefinition(
+            resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
+        )
+    ]
+)
+def demo_error_pipeline_s3():
     error_solid()
 
 
@@ -179,7 +233,7 @@ def bar(_, input_arg):
     return input_arg
 
 
-@pipeline
+@pipeline(mode_defs=[ModeDefinition(resource_defs={"io_manager": fs_io_manager})])
 def optional_outputs():
     foo_res = foo()
     bar.alias("first_consumer")(input_arg=foo_res.out_1)
@@ -409,6 +463,7 @@ def define_resource_pipeline():
             resources={
                 "s3": s3_resource,
                 "s3_resource_with_context_manager": s3_resource_with_context_manager,
+                "io_manager": s3_pickle_io_manager,
             }
         )
     )
@@ -463,12 +518,22 @@ def emit_airflow_execution_date(context):
 @pipeline(
     mode_defs=[
         ModeDefinition(
-            intermediate_storage_defs=s3_plus_default_intermediate_storage_defs,
-            resource_defs={"s3": s3_resource},
+            resource_defs={"io_manager": fs_io_manager},
         )
     ]
 )
 def demo_airflow_execution_date_pipeline():
+    emit_airflow_execution_date()
+
+
+@pipeline(
+    mode_defs=[
+        ModeDefinition(
+            resource_defs={"s3": s3_resource, "io_manager": s3_pickle_io_manager},
+        )
+    ]
+)
+def demo_airflow_execution_date_pipeline_s3():
     emit_airflow_execution_date()
 
 
@@ -505,18 +570,40 @@ def define_demo_k8s_executor_pipeline():
     return demo_k8s_executor_pipeline
 
 
+@solid
+def check_volume_mount(context):
+    with open("/opt/dagster/test_mount_path/volume_mounted_file.yaml", "r") as mounted_file:
+        contents = mounted_file.read()
+        context.log.info(f"Contents of mounted file: {contents}")
+        assert contents == "BAR_CONTENTS"
+
+
+def define_volume_mount_pipeline():
+    @pipeline(
+        mode_defs=k8s_mode_defs(),
+    )
+    def volume_mount_pipeline():
+        check_volume_mount()
+
+    return volume_mount_pipeline
+
+
 def define_demo_execution_repo():
     @repository
     def demo_execution_repo():
         return {
             "pipelines": {
                 "demo_pipeline_celery": define_demo_pipeline_celery,
+                "demo_pipeline_docker": define_demo_pipeline_docker,
+                "demo_pipeline_docker_slow": define_demo_pipeline_docker_slow,
                 "large_pipeline_celery": define_large_pipeline_celery,
                 "long_running_pipeline_celery": define_long_running_pipeline_celery,
                 "optional_outputs": optional_outputs,
                 "demo_pipeline": demo_pipeline,
+                "demo_pipeline_s3": demo_pipeline_s3,
                 "demo_pipeline_gcs": demo_pipeline_gcs,
                 "demo_error_pipeline": demo_error_pipeline,
+                "demo_error_pipeline_s3": demo_error_pipeline_s3,
                 "resources_limit_pipeline": define_resources_limit_pipeline,
                 "retry_pipeline": define_step_retry_pipeline,
                 "slow_pipeline": define_slow_pipeline,
@@ -524,9 +611,11 @@ def define_demo_execution_repo():
                 "resource_pipeline": define_resource_pipeline,
                 "docker_celery_pipeline": define_docker_celery_pipeline,
                 "demo_airflow_execution_date_pipeline": demo_airflow_execution_date_pipeline,
+                "demo_airflow_execution_date_pipeline_s3": demo_airflow_execution_date_pipeline_s3,
                 "hanging_pipeline": hanging_pipeline,
                 "hard_failer": define_hard_failer,
                 "demo_k8s_executor_pipeline": define_demo_k8s_executor_pipeline,
+                "volume_mount_pipeline": define_volume_mount_pipeline,
             },
             "schedules": define_schedules(),
         }

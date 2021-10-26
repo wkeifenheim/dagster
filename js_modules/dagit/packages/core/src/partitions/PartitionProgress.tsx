@@ -1,6 +1,4 @@
 import {gql, useQuery} from '@apollo/client';
-import {Button} from '@blueprintjs/core';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import qs from 'qs';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
@@ -19,10 +17,13 @@ import {
 import {DagsterTag} from '../runs/RunTag';
 import {TerminationDialog} from '../runs/TerminationDialog';
 import {POLL_INTERVAL} from '../runs/useCursorPaginatedQuery';
-import {PipelineRunStatus} from '../types/globalTypes';
+import {RunStatus} from '../types/globalTypes';
 import {Box} from '../ui/Box';
+import {ButtonWIP} from '../ui/Button';
 import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
 import {stringFromValue} from '../ui/TokenizingField';
+import {Tooltip} from '../ui/Tooltip';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
@@ -135,25 +136,25 @@ export const PartitionProgress = (props: Props) => {
     <TooltipTable>
       <tbody>
         <TooltipTableRow
-          runStatus={PipelineRunStatus.QUEUED}
+          runStatus={RunStatus.QUEUED}
           humanText="Queued"
           count={numQueued}
           numTotal={numTotal}
         />
         <TooltipTableRow
-          runStatus={PipelineRunStatus.STARTED}
+          runStatus={RunStatus.STARTED}
           humanText="In progress"
           count={numInProgress}
           numTotal={numTotal}
         />
         <TooltipTableRow
-          runStatus={PipelineRunStatus.SUCCESS}
+          runStatus={RunStatus.SUCCESS}
           humanText="Succeeded"
           count={numSucceeded}
           numTotal={numTotal}
         />
         <TooltipTableRow
-          runStatus={PipelineRunStatus.FAILURE}
+          runStatus={RunStatus.FAILURE}
           humanText="Failed"
           count={numFailed}
           numTotal={numTotal}
@@ -188,7 +189,7 @@ export const PartitionProgress = (props: Props) => {
                     <Link
                       to={workspacePathFromAddress(
                         repoAddress,
-                        `/pipelines/${pipelineName}/runs?${qs.stringify({
+                        `/pipeline_or_job/${pipelineName}/runs?${qs.stringify({
                           q: stringFromValue([
                             {token: 'tag', value: `dagster/backfill=${backfillId}`},
                           ]),
@@ -214,9 +215,14 @@ export const PartitionProgress = (props: Props) => {
         </Tooltip>
         {Object.keys(unfinishedMap).length ? (
           <>
-            <Button minimal icon="stop" intent="danger" onClick={() => setIsTerminating(true)}>
+            <ButtonWIP
+              outlined
+              icon={<IconWIP name="cancel" />}
+              intent="danger"
+              onClick={() => setIsTerminating(true)}
+            >
               Terminate
-            </Button>
+            </ButtonWIP>
             <TerminationDialog
               isOpen={isTerminating}
               onClose={() => setIsTerminating(false)}
@@ -234,7 +240,7 @@ export const PartitionProgress = (props: Props) => {
 };
 
 const TooltipTableRow: React.FC<{
-  runStatus?: PipelineRunStatus;
+  runStatus?: RunStatus;
   humanText: string;
   count: number;
   numTotal: number;

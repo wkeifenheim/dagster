@@ -1,7 +1,8 @@
-import {Button, Icon} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
 import * as React from 'react';
 import styled from 'styled-components/macro';
+
+import {ButtonWIP} from './Button';
+import {IconWIP} from './Icon';
 
 export interface CursorPaginationProps {
   hasPrevCursor: boolean;
@@ -18,28 +19,18 @@ export const CursorPaginationControls: React.FunctionComponent<CursorPaginationP
   advanceCursor,
 }) => {
   return (
-    <div style={{textAlign: 'center', marginBottom: 10}}>
-      <Button
-        style={{
-          marginRight: 4,
-        }}
-        disabled={!hasPrevCursor}
-        icon={IconNames.ARROW_LEFT}
-        onClick={popCursor}
-      >
-        Prev Page
-      </Button>
-      <Button
-        style={{
-          marginLeft: 4,
-        }}
+    <CursorControlsContainer>
+      <ButtonWIP disabled={!hasPrevCursor} icon={<IconWIP name="arrow_back" />} onClick={popCursor}>
+        Previous
+      </ButtonWIP>
+      <ButtonWIP
         disabled={!hasNextCursor}
-        rightIcon={IconNames.ARROW_RIGHT}
+        icon={<IconWIP name="arrow_forward" />}
         onClick={advanceCursor}
       >
-        Next Page
-      </Button>
-    </div>
+        Next
+      </ButtonWIP>
+    </CursorControlsContainer>
   );
 };
 
@@ -50,30 +41,29 @@ export const CursorHistoryControls: React.FunctionComponent<CursorPaginationProp
   advanceCursor,
 }) => {
   return (
-    <CursorHistoryControlsContainer>
-      <Button style={{marginRight: 4}} disabled={!hasNextCursor} onClick={advanceCursor}>
-        <Icon icon={IconNames.ARROW_LEFT} />
-        <span className="hideable-button-text" style={{marginLeft: 8}}>
-          Older
-        </span>
-      </Button>
-      <Button style={{marginLeft: 4}} disabled={!hasPrevCursor} onClick={popCursor}>
-        <span className="hideable-button-text" style={{marginRight: 8}}>
-          Newer
-        </span>
-        <Icon icon={IconNames.ARROW_RIGHT} />
-      </Button>
-    </CursorHistoryControlsContainer>
+    <CursorControlsContainer>
+      <ButtonWIP
+        icon={<IconWIP name="arrow_back" />}
+        disabled={!hasNextCursor}
+        onClick={advanceCursor}
+      >
+        <span className="hideable-button-text">Older</span>
+      </ButtonWIP>
+      <ButtonWIP
+        rightIcon={<IconWIP name="arrow_forward" />}
+        disabled={!hasPrevCursor}
+        onClick={popCursor}
+      >
+        <span className="hideable-button-text">Newer</span>
+      </ButtonWIP>
+    </CursorControlsContainer>
   );
 };
 
-const CursorHistoryControlsContainer = styled.div`
-  text-align: center;
-  white-space: nowrap;
-
-  @media (max-width: 1000px) {
-    & .hideable-button-text {
-      display: none;
-    }
-  }
+export const CursorControlsContainer = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
 `;

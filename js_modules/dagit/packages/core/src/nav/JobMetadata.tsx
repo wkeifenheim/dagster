@@ -1,22 +1,32 @@
 import {gql, useQuery} from '@apollo/client';
-import {Button, Classes, Colors, Dialog, Icon} from '@blueprintjs/core';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
-import styled from 'styled-components/macro';
 
-import {useFeatureFlags} from '../app/Flags';
 import {timingStringForStatus} from '../runs/RunDetails';
-import {RunStatus} from '../runs/RunStatusDots';
+import {RunStatusIndicator} from '../runs/RunStatusDots';
 import {RunTime, RUN_TIME_FRAGMENT} from '../runs/RunUtils';
 import {ScheduleSwitch, SCHEDULE_SWITCH_FRAGMENT} from '../schedules/ScheduleSwitch';
 import {TimestampDisplay} from '../schedules/TimestampDisplay';
+import {humanCronString} from '../schedules/humanCronString';
 import {SensorSwitch, SENSOR_SWITCH_FRAGMENT} from '../sensors/SensorSwitch';
+import {RunStatus} from '../types/globalTypes';
 import {Box} from '../ui/Box';
+import {ButtonWIP} from '../ui/Button';
 import {ButtonLink} from '../ui/ButtonLink';
+<<<<<<< HEAD
 import {Group} from '../ui/Group';
 import {MetadataTable, StyledTable} from '../ui/MetadataTable';
 import {Mono} from '../ui/Text';
+=======
+import {ColorsWIP} from '../ui/Colors';
+import {DialogFooter, DialogWIP} from '../ui/Dialog';
+import {StyledTable} from '../ui/MetadataTable';
+import {Table} from '../ui/Table';
+import {TagWIP} from '../ui/TagWIP';
+import {Subheading} from '../ui/Text';
+import {Tooltip} from '../ui/Tooltip';
+import {FontFamily} from '../ui/styles';
+>>>>>>> 1526964360e78354876b6adc7a9c90b1aaf7e296
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
@@ -30,15 +40,13 @@ import {RunMetadataFragment} from './types/RunMetadataFragment';
 
 interface Props {
   pipelineName: string;
-  pipelineMode: string;
   repoAddress: RepoAddress;
 }
 
 export const JobMetadata: React.FC<Props> = (props) => {
-  const {pipelineName, pipelineMode, repoAddress} = props;
-  const {flagPipelineModeTuples} = useFeatureFlags();
+  const {pipelineName, repoAddress} = props;
 
-  const {data, loading} = useQuery<JobMetadataQuery>(JOB_METADATA_QUERY, {
+  const {data} = useQuery<JobMetadataQuery>(JOB_METADATA_QUERY, {
     variables: {
       params: {
         pipelineName,
@@ -47,7 +55,6 @@ export const JobMetadata: React.FC<Props> = (props) => {
       },
       runsFilter: {
         pipelineName,
-        mode: flagPipelineModeTuples ? pipelineMode : undefined,
       },
     },
   });
@@ -60,7 +67,7 @@ export const JobMetadata: React.FC<Props> = (props) => {
   }, [data]);
 
   const runs = React.useMemo(() => {
-    if (data?.pipelineRunsOrError && data.pipelineRunsOrError.__typename === 'PipelineRuns') {
+    if (data?.pipelineRunsOrError && data.pipelineRunsOrError.__typename === 'Runs') {
       return data.pipelineRunsOrError.results;
     }
     return [];
@@ -69,63 +76,33 @@ export const JobMetadata: React.FC<Props> = (props) => {
   const lastRun = runs[0] || null;
 
   return (
-    <MetadataTable
-      spacing={2}
-      rows={[
-        {
-          key: 'Schedule/sensor',
-          value: job ? (
-            <ScheduleOrSensor job={job} mode={pipelineMode} repoAddress={repoAddress} />
-          ) : (
-            <GrayText>{loading ? 'Loading…' : 'None'}</GrayText>
-          ),
-        },
-        {
-          key: 'Latest run',
-          value: lastRun ? (
-            <LatestRun run={lastRun} />
-          ) : (
-            <GrayText>{loading ? 'Loading…' : 'None'}</GrayText>
-          ),
-        },
-        {
-          key: 'Related assets',
-          value: runs.length ? (
-            <RelatedAssets runs={runs} />
-          ) : (
-            <GrayText>{loading ? 'Loading…' : 'None'}</GrayText>
-          ),
-        },
-      ]}
-    />
+    <>
+      {job ? <ScheduleOrSensorTag job={job} repoAddress={repoAddress} /> : null}
+      {lastRun ? <LatestRunTag run={lastRun} /> : null}
+      {runs.length ? <RelatedAssetsTag runs={runs} /> : null}
+    </>
   );
 };
 
-const ScheduleOrSensor: React.FC<{job: Job; mode: string; repoAddress: RepoAddress}> = ({
+const ScheduleOrSensorTag: React.FC<{job: Job; repoAddress: RepoAddress}> = ({
   job,
-  mode,
   repoAddress,
 }) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
   const [open, setOpen] = React.useState(false);
 
   const matchingSchedules = React.useMemo(() => {
     if (job?.__typename === 'Pipeline' && job.schedules.length) {
-      return flagPipelineModeTuples
-        ? job.schedules.filter((schedule) => schedule.mode === mode)
-        : job.schedules;
+      return job.schedules;
     }
     return [];
-  }, [flagPipelineModeTuples, job, mode]);
+  }, [job]);
 
   const matchingSensors = React.useMemo(() => {
     if (job?.__typename === 'Pipeline' && job.sensors.length) {
-      return flagPipelineModeTuples
-        ? job.sensors.filter((sensor) => sensor.mode === mode)
-        : job.sensors;
+      return job.sensors;
     }
     return [];
-  }, [flagPipelineModeTuples, job, mode]);
+  }, [job]);
 
   const scheduleCount = matchingSchedules.length;
   const sensorCount = matchingSensors.length;
@@ -145,36 +122,102 @@ const ScheduleOrSensor: React.FC<{job: Job; mode: string; repoAddress: RepoAddre
         ? 'Schedules'
         : 'Sensors';
 
+    const icon = scheduleCount > 1 ? 'schedule' : 'sensors';
+
     return (
       <>
-        <ButtonLink onClick={() => setOpen(true)}>{buttonText}</ButtonLink>
-        <Dialog
+        <TagWIP icon={icon}>
+          <ButtonLink onClick={() => setOpen(true)} color={ColorsWIP.Link}>
+            {buttonText}
+          </ButtonLink>
+        </TagWIP>
+        <DialogWIP
           title={dialogTitle}
           canOutsideClickClose
           canEscapeKeyClose
           isOpen={open}
+          style={{width: '50vw', minWidth: '600px', maxWidth: '800px'}}
           onClose={() => setOpen(false)}
         >
-          <div className={Classes.DIALOG_BODY}>
-            <Group direction="column" spacing={16}>
-              {matchingSchedules.map((schedule) => (
-                <MatchingSchedule
-                  key={schedule.name}
-                  schedule={schedule}
-                  repoAddress={repoAddress}
-                />
-              ))}
-              {matchingSensors.map((sensor) => (
-                <MatchingSensor key={sensor.name} sensor={sensor} repoAddress={repoAddress} />
-              ))}
-            </Group>
-          </div>
-          <div className={Classes.DIALOG_FOOTER}>
-            <div className={Classes.DIALOG_FOOTER_ACTIONS}>
-              <Button text="OK" onClick={() => setOpen(false)} />
-            </div>
-          </div>
-        </Dialog>
+          <Box padding={{bottom: 12}}>
+            {matchingSchedules.length ? (
+              <>
+                {matchingSensors.length ? (
+                  <Box padding={{vertical: 16, horizontal: 24}}>
+                    <Subheading>Schedules ({matchingSchedules.length})</Subheading>
+                  </Box>
+                ) : null}
+                <Table>
+                  <thead>
+                    <tr>
+                      <th style={{width: '80px'}} />
+                      <th>Schedule name</th>
+                      <th>Schedule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matchingSchedules.map((schedule) => (
+                      <tr key={schedule.name}>
+                        <td>
+                          <ScheduleSwitch repoAddress={repoAddress} schedule={schedule} />
+                        </td>
+                        <td>
+                          <Link
+                            to={workspacePathFromAddress(
+                              repoAddress,
+                              `/schedules/${schedule.name}`,
+                            )}
+                          >
+                            {schedule.name}
+                          </Link>
+                        </td>
+                        <td>{humanCronString(schedule.cronSchedule)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </>
+            ) : null}
+            {matchingSensors.length ? (
+              <>
+                {matchingSchedules.length ? (
+                  <Box padding={{vertical: 16, horizontal: 24}}>
+                    <Subheading>Sensors ({matchingSensors.length})</Subheading>
+                  </Box>
+                ) : null}
+                <Table>
+                  <thead>
+                    <tr>
+                      <th style={{width: '80px'}} />
+                      <th>Sensor name</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matchingSensors.map((sensor) => (
+                      <tr key={sensor.name}>
+                        <td>
+                          <SensorSwitch repoAddress={repoAddress} sensor={sensor} />
+                        </td>
+                        <td>
+                          <Link
+                            to={workspacePathFromAddress(repoAddress, `/sensors/${sensor.name}`)}
+                          >
+                            {sensor.name}
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </>
+            ) : null}
+          </Box>
+          <DialogFooter>
+            <ButtonWIP intent="primary" onClick={() => setOpen(false)}>
+              OK
+            </ButtonWIP>
+          </DialogFooter>
+        </DialogWIP>
       </>
     );
   }
@@ -187,54 +230,93 @@ const ScheduleOrSensor: React.FC<{job: Job; mode: string; repoAddress: RepoAddre
     return <MatchingSensor sensor={matchingSensors[0]} repoAddress={repoAddress} />;
   }
 
-  return <GrayText>None</GrayText>;
+  return null;
 };
 
 const MatchingSchedule: React.FC<{schedule: Schedule; repoAddress: RepoAddress}> = ({
   schedule,
   repoAddress,
-}) => (
-  <Group direction="row" spacing={8}>
-    <Icon
-      icon="time"
-      color={Colors.GRAY3}
-      iconSize={13}
-      style={{position: 'relative', top: '-2px'}}
-    />
-    <Link to={workspacePathFromAddress(repoAddress, `/schedules/${schedule.name}`)}>
-      {schedule.name}
-    </Link>
-    <ScheduleSwitch large={false} repoAddress={repoAddress} schedule={schedule} />
-  </Group>
-);
+}) => {
+  const running = schedule.scheduleState.status === 'RUNNING';
+  const tag = (
+    <TagWIP intent={running ? 'primary' : 'none'} icon="schedule">
+      <Box flex={{direction: 'row', alignItems: 'center', gap: 4}}>
+        Schedule:
+        <Link to={workspacePathFromAddress(repoAddress, `/schedules/${schedule.name}`)}>
+          {humanCronString(schedule.cronSchedule)}
+        </Link>
+        <ScheduleSwitch size="small" repoAddress={repoAddress} schedule={schedule} />
+      </Box>
+    </TagWIP>
+  );
+
+  return schedule.cronSchedule ? (
+    <Tooltip
+      placement="bottom"
+      content={
+        <Box flex={{direction: 'column', gap: 4}}>
+          <div>
+            Name: <strong>{schedule.name}</strong>
+          </div>
+          <div>
+            Cron:{' '}
+            <span style={{fontFamily: FontFamily.monospace, marginLeft: '4px'}}>
+              ({schedule.cronSchedule})
+            </span>
+          </div>
+        </Box>
+      }
+    >
+      {tag}
+    </Tooltip>
+  ) : (
+    tag
+  );
+};
 
 const MatchingSensor: React.FC<{sensor: Sensor; repoAddress: RepoAddress}> = ({
   sensor,
   repoAddress,
-}) => (
-  <Group direction="row" spacing={8}>
-    <Icon
-      icon="automatic-updates"
-      color={Colors.GRAY3}
-      iconSize={13}
-      style={{position: 'relative', top: '-2px'}}
-    />
-    <Link to={workspacePathFromAddress(repoAddress, `/sensors/${sensor.name}`)}>{sensor.name}</Link>
-    <SensorSwitch large={false} repoAddress={repoAddress} sensor={sensor} />
-  </Group>
-);
+}) => {
+  const running = sensor.sensorState.status === 'RUNNING';
+  return (
+    <TagWIP intent={running ? 'primary' : 'none'} icon="sensors">
+      <Box flex={{direction: 'row', alignItems: 'center', gap: 4}}>
+        Sensor:
+        <Link to={workspacePathFromAddress(repoAddress, `/sensors/${sensor.name}`)}>
+          {sensor.name}
+        </Link>
+        <SensorSwitch size="small" repoAddress={repoAddress} sensor={sensor} />
+      </Box>
+    </TagWIP>
+  );
+};
 
 const TIME_FORMAT = {showSeconds: true, showTimezone: false};
 
-const LatestRun: React.FC<{run: RunMetadataFragment}> = ({run}) => {
+const LatestRunTag: React.FC<{run: RunMetadataFragment}> = ({run}) => {
   const stats = React.useMemo(() => {
-    if (run.stats.__typename === 'PipelineRunStatsSnapshot') {
+    if (run.stats.__typename === 'RunStatsSnapshot') {
       return {start: run.stats.startTime, end: run.stats.endTime, status: run.status};
     }
     return null;
   }, [run]);
 
+  const intent = () => {
+    switch (run.status) {
+      case RunStatus.SUCCESS:
+        return 'success';
+      case RunStatus.CANCELED:
+      case RunStatus.CANCELING:
+      case RunStatus.FAILURE:
+        return 'danger';
+      default:
+        return 'none';
+    }
+  };
+
   return (
+<<<<<<< HEAD
     <Group direction="row" spacing={8} alignItems="center">
       <RunStatus status={run.status} />
       <Mono>
@@ -276,10 +358,55 @@ const LatestRun: React.FC<{run: RunMetadataFragment}> = ({run}) => {
         </Tooltip>
       ) : null}
     </Group>
+=======
+    <TagWIP intent={intent()}>
+      <Box flex={{direction: 'row', alignItems: 'center', gap: 4}}>
+        <RunStatusIndicator status={run.status} size={10} />
+        Latest run:
+        {stats ? (
+          <Tooltip
+            placement="bottom"
+            content={
+              <StyledTable>
+                <tbody>
+                  <tr>
+                    <td style={{color: ColorsWIP.Gray300}}>
+                      <Box padding={{right: 16}}>Started</Box>
+                    </td>
+                    <td>
+                      {stats.start ? (
+                        <TimestampDisplay timestamp={stats.start} timeFormat={TIME_FORMAT} />
+                      ) : (
+                        timingStringForStatus(stats.status)
+                      )}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={{color: ColorsWIP.Gray300}}>Ended</td>
+                    <td>
+                      {stats.end ? (
+                        <TimestampDisplay timestamp={stats.end} timeFormat={TIME_FORMAT} />
+                      ) : (
+                        timingStringForStatus(stats.status)
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </StyledTable>
+            }
+          >
+            <Link to={`/instance/runs/${run.id}`}>
+              <RunTime run={run} />
+            </Link>
+          </Tooltip>
+        ) : null}
+      </Box>
+    </TagWIP>
+>>>>>>> 1526964360e78354876b6adc7a9c90b1aaf7e296
   );
 };
 
-const RelatedAssets: React.FC<{runs: RunMetadataFragment[]}> = ({runs}) => {
+const RelatedAssetsTag: React.FC<{runs: RunMetadataFragment[]}> = ({runs}) => {
   const [open, setOpen] = React.useState(false);
 
   const assetMap = {};
@@ -292,18 +419,27 @@ const RelatedAssets: React.FC<{runs: RunMetadataFragment[]}> = ({runs}) => {
 
   const keys = Object.keys(assetMap);
   if (keys.length === 0) {
-    return <GrayText>None</GrayText>;
+    return null;
   }
 
   if (keys.length === 1) {
     const key = keys[0];
-    return <Link to={`/instance/assets/${key}`}>{key}</Link>;
+    return (
+      <TagWIP icon="asset">
+        Asset: <Link to={`/instance/assets/${key}`}>{key}</Link>
+      </TagWIP>
+    );
   }
 
   return (
     <>
-      <ButtonLink onClick={() => setOpen(true)}>{`View ${keys.length} assets`}</ButtonLink>
-      <Dialog
+      <TagWIP icon="asset">
+        <ButtonLink
+          color={ColorsWIP.Link}
+          onClick={() => setOpen(true)}
+        >{`View ${keys.length} assets`}</ButtonLink>
+      </TagWIP>
+      <DialogWIP
         title="Related assets"
         canOutsideClickClose
         canEscapeKeyClose
@@ -311,28 +447,34 @@ const RelatedAssets: React.FC<{runs: RunMetadataFragment[]}> = ({runs}) => {
         onClose={() => setOpen(false)}
         style={{maxWidth: '80%', minWidth: '500px', width: 'auto'}}
       >
-        <div className={Classes.DIALOG_BODY}>
-          <Group direction="column" spacing={16}>
-            {keys.map((key) => (
-              <Link key={key} to={`/instance/assets/${key}`} style={{wordBreak: 'break-word'}}>
-                {key}
-              </Link>
-            ))}
-          </Group>
-        </div>
-        <div className={Classes.DIALOG_FOOTER}>
-          <div className={Classes.DIALOG_FOOTER_ACTIONS}>
-            <Button text="OK" onClick={() => setOpen(false)} />
-          </div>
-        </div>
-      </Dialog>
+        <Box padding={{bottom: 12}}>
+          <Table>
+            <tbody>
+              {keys.map((key) => (
+                <tr key={key}>
+                  <td>
+                    <Link
+                      key={key}
+                      to={`/instance/assets/${key}`}
+                      style={{wordBreak: 'break-word'}}
+                    >
+                      {key}
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+        <DialogFooter>
+          <ButtonWIP intent="primary" onClick={() => setOpen(false)}>
+            OK
+          </ButtonWIP>
+        </DialogFooter>
+      </DialogWIP>
     </>
   );
 };
-
-const GrayText = styled.div`
-  color: ${Colors.GRAY3};
-`;
 
 const RUN_METADATA_FRAGMENT = gql`
   fragment RunMetadataFragment on PipelineRun {
@@ -350,18 +492,24 @@ const RUN_METADATA_FRAGMENT = gql`
 `;
 
 const JOB_METADATA_QUERY = gql`
-  query JobMetadataQuery($params: PipelineSelector!, $runsFilter: PipelineRunsFilter) {
+  query JobMetadataQuery($params: PipelineSelector!, $runsFilter: RunsFilter) {
     pipelineOrError(params: $params) {
       ... on Pipeline {
         id
+        isJob
+        name
         schedules {
           id
+          cronSchedule
           mode
           ...ScheduleSwitchFragment
         }
         sensors {
           id
-          mode
+          targets {
+            pipelineName
+            mode
+          }
           ...SensorSwitchFragment
         }
       }

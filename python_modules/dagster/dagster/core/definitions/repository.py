@@ -6,6 +6,7 @@ from dagster.core.errors import DagsterInvalidDefinitionError, DagsterInvariantV
 from dagster.utils import merge_dicts
 
 from .graph import GraphDefinition
+from .job import JobDefinition
 from .partition import PartitionScheduleDefinition, PartitionSetDefinition
 from .pipeline import PipelineDefinition
 from .schedule import ScheduleDefinition
@@ -21,7 +22,11 @@ VALID_REPOSITORY_DATA_DICT_KEYS = {
 }
 
 RepositoryLevelDefinition = TypeVar(
-    "RepositoryLevelDefinition", PipelineDefinition, PartitionSetDefinition, ScheduleDefinition
+    "RepositoryLevelDefinition",
+    PipelineDefinition,
+    PartitionSetDefinition,
+    ScheduleDefinition,
+    SensorDefinition,
 )
 
 
@@ -90,9 +95,18 @@ class _CacheingDefinitionIndex(Generic[RepositoryLevelDefinition]):
         if self._definition_names:
             return self._definition_names
 
-        self._definition_names = list(self._definitions.keys()) + [
-            definition.name for definition in self._get_lazy_definitions()
-        ]
+        lazy_names = []
+        for definition in self._get_lazy_definitions():
+            strict_definition = self._definitions.get(definition.name)
+            if strict_definition:
+                check.invariant(
+                    strict_definition == definition,
+                    f"Duplicate definition found for {definition.name}",
+                )
+            else:
+                lazy_names.append(definition.name)
+
+        self._definition_names = list(self._definitions.keys()) + lazy_names
         return self._definition_names
 
     def has_definition(self, definition_name: str) -> bool:
@@ -218,9 +232,47 @@ class RepositoryData(ABC):
         ]
         if not pipelines_with_name:
             raise DagsterInvariantViolationError(
-                f"Could not find pipeline {pipeline_name} in repository"
+                f"Could not find target {pipeline_name} in repository"
             )
         return pipelines_with_name[0]
+
+    def get_all_jobs(self):
+        """Return all pipelines/jobs in the repository as a list.
+
+        Returns:
+            List[PipelineDefinition]: All pipelines/jobs in the repository.
+        """
+        return self.get_all_pipelines()
+
+    def get_job_names(self):
+        """Get the names of all pipelines/jobs in the repository.
+
+        Returns:
+            List[str]
+        """
+        return self.get_pipeline_names()
+
+    def has_job(self, job_name):
+        """Check if a pipeline/job with a given name is present in the repository.
+
+        Args:
+            job_name (str): The name of the pipeline/job.
+
+        Returns:
+            bool
+        """
+        return self.has_pipeline(job_name)
+
+    def get_job(self, job_name):
+        """Get a pipeline/job by name.
+
+        Args:
+            job_name (str): Name of the pipeline/job to retrieve.
+
+        Returns:
+            PipelineDefinition: The pipeline/job definition corresponding to the given name.
+        """
+        return self.get_pipeline(job_name)
 
     def get_partition_set_names(self):
         """Get the names of all partition sets in the repository.
@@ -379,14 +431,17 @@ class CachingRepositoryData(RepositoryData):
         ]
 
         def load_partition_sets_from_pipelines():
-            mode_partition_sets = []
+            job_partition_sets = []
             for pipeline in self.get_all_pipelines():
-                for mode_def in pipeline.mode_definitions:
-                    partition_set_def = mode_def.get_partition_set_def(pipeline.name)
-                    if partition_set_def:
-                        mode_partition_sets.append(partition_set_def)
+                if isinstance(pipeline, JobDefinition):
+                    job_partition_set = pipeline.get_partition_set_def()
 
-            return mode_partition_sets
+                    if job_partition_set:
+                        # should only return a partition set if this was constructed using the job
+                        # API, with a partitioned config
+                        job_partition_sets.append(job_partition_set)
+
+            return job_partition_sets
 
         self._partition_sets = _CacheingDefinitionIndex(
             PartitionSetDefinition,
@@ -420,6 +475,7 @@ class CachingRepositoryData(RepositoryData):
 
                 {
                     'pipelines': Dict[str, Callable[[], PipelineDefinition]],
+                    'jobs': Dict[str, Callable[[], JobDefinition]],
                     'partition_sets': Dict[str, Callable[[], PartitionSetDefinition]],
                     'schedules': Dict[str, Callable[[], ScheduleDefinition]]
                 }
@@ -491,8 +547,8 @@ class CachingRepositoryData(RepositoryData):
             if isinstance(definition, PipelineDefinition):
                 if definition.name in pipelines and pipelines[definition.name] != definition:
                     raise DagsterInvalidDefinitionError(
-                        "Duplicate pipeline definition found for pipeline {pipeline_name}".format(
-                            pipeline_name=definition.name
+                        "Duplicate {target_type} definition found for {target}".format(
+                            target_type=definition.target_type, target=definition.describe_target()
                         )
                     )
                 pipelines[definition.name] = definition
@@ -510,9 +566,10 @@ class CachingRepositoryData(RepositoryData):
                     )
                 jobs[definition.name] = definition
                 sensors[definition.name] = definition
-                if definition.has_loadable_target():
-                    target = definition.load_target()
-                    pipelines[target.name] = target
+                if definition.has_loadable_targets():
+                    targets = definition.load_targets()
+                    for target in targets:
+                        pipelines[target.name] = target
             elif isinstance(definition, ScheduleDefinition):
                 if definition.name in jobs:
                     raise DagsterInvalidDefinitionError(
@@ -729,7 +786,7 @@ class CachingRepositoryData(RepositoryData):
 
         if schedule.pipeline_name not in pipelines:
             raise DagsterInvalidDefinitionError(
-                f'ScheduleDefinition "{schedule.name}" targets pipeline "{schedule.pipeline_name}" '
+                f'ScheduleDefinition "{schedule.name}" targets job/pipeline "{schedule.pipeline_name}" '
                 "which was not found in this repository."
             )
 
@@ -737,15 +794,16 @@ class CachingRepositoryData(RepositoryData):
 
     def _validate_sensor(self, sensor):
         pipelines = self.get_pipeline_names()
-        if sensor.pipeline_name is None:
+        if len(sensor.targets) == 0:
             # skip validation when the sensor does not target a pipeline
             return sensor
 
-        if sensor.pipeline_name not in pipelines:
-            raise DagsterInvalidDefinitionError(
-                f'SensorDefinition "{sensor.name}" targets pipeline "{sensor.pipeline_name}" '
-                "which was not found in this repository."
-            )
+        for target in sensor.targets:
+            if target.pipeline_name not in pipelines:
+                raise DagsterInvalidDefinitionError(
+                    f'SensorDefinition "{sensor.name}" targets job/pipeline "{sensor.pipeline_name}" '
+                    "which was not found in this repository."
+                )
 
         return sensor
 
@@ -788,6 +846,11 @@ class RepositoryDefinition:
         """List[str]: Names of all pipelines in the repository"""
         return self._repository_data.get_pipeline_names()
 
+    @property
+    def job_names(self):
+        """List[str]: Names of all pipelines/jobs in the repository"""
+        return self._repository_data.get_job_names()
+
     def has_pipeline(self, name):
         """Check if a pipeline with a given name is present in the repository.
 
@@ -802,7 +865,7 @@ class RepositoryDefinition:
     def get_pipeline(self, name):
         """Get a pipeline by name.
 
-        If this pipeline is present in the lazily evaluated ``pipeline_dict`` passed to the
+        If this pipeline is present in the lazily evaluated dictionary passed to the
         constructor, but has not yet been constructed, only this pipeline is constructed, and will
         be cached for future calls.
 
@@ -817,13 +880,51 @@ class RepositoryDefinition:
     def get_all_pipelines(self):
         """Return all pipelines in the repository as a list.
 
-        Note that this will construct any pipeline in the lazily evaluated ``pipeline_dict`` that
+        Note that this will construct any pipeline in the lazily evaluated dictionary that
         has not yet been constructed.
 
         Returns:
             List[PipelineDefinition]: All pipelines in the repository.
         """
         return self._repository_data.get_all_pipelines()
+
+    def has_job(self, name):
+        """Check if a pipeline/job with a given name is present in the repository.
+
+        Args:
+            name (str): The name of the pipeline/job.
+
+        Returns:
+            bool
+        """
+        return self._repository_data.has_job(name)
+
+    def get_job(self, name):
+        """Get a pipeline/job by name.
+
+        If this pipeline/job is present in the lazily evaluated dictionary passed to the
+        constructor, but has not yet been constructed, only this pipeline/job is constructed, and
+        will be cached for future calls.
+
+        Args:
+            name (str): Name of the pipeline/job to retrieve.
+
+        Returns:
+            Union[PipelineDefinition, JobDefinition]: The pipeline/job definition corresponding to
+            the given name.
+        """
+        return self._repository_data.get_job(name)
+
+    def get_all_jobs(self):
+        """Return all pipelines/jobs in the repository as a list.
+
+        Note that this will construct any pipeline/job in the lazily evaluated dictionary that has
+        not yet been constructed.
+
+        Returns:
+            List[Union[PipelineDefinition, JobDefinition]]: All pipelines/jobs in the repository.
+        """
+        return self._repository_data.get_all_jobs()
 
     @property
     def partition_set_defs(self):

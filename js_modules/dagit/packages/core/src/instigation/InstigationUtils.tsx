@@ -1,12 +1,12 @@
 import {gql} from '@apollo/client';
-import {Colors} from '@blueprintjs/core';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components/macro';
 
 import {PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorInfo';
-import {RunStatus} from '../runs/RunStatusDots';
+import {RunStatusIndicator} from '../runs/RunStatusDots';
 import {titleForRun} from '../runs/RunUtils';
+import {ColorsWIP} from '../ui/Colors';
 import {Group} from '../ui/Group';
 import {Mono} from '../ui/Text';
 import {REPOSITORY_ORIGIN_FRAGMENT} from '../workspace/RepositoryInformation';
@@ -18,12 +18,12 @@ export const InstigatedRunStatus: React.FC<{
   instigationState: InstigationStateFragment;
 }> = ({instigationState}) => {
   if (!instigationState.runs.length) {
-    return <span style={{color: Colors.GRAY4}}>None</span>;
+    return <span style={{color: ColorsWIP.Gray300}}>None</span>;
   }
   const run = instigationState.runs[0];
   return (
     <Group direction="row" spacing={4} alignItems="center">
-      <RunStatus status={run.status} />
+      <RunStatusIndicator status={run.status} />
       <Link to={`/instance/runs/${run.runId}`} target="_blank" rel="noreferrer">
         <Mono>{titleForRun({runId: run.runId})}</Mono>
       </Link>
@@ -81,6 +81,6 @@ export const StatusTable = styled.table`
   }
 
   &&&&& tbody > tr > td:first-child {
-    color: ${Colors.GRAY2};
+    color: ${ColorsWIP.Gray500};
   }
 `;

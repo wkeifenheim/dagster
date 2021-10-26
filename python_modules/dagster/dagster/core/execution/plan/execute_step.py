@@ -32,7 +32,6 @@ from dagster.core.execution.plan.inputs import StepInputData
 from dagster.core.execution.plan.objects import StepSuccessData, TypeCheckData
 from dagster.core.execution.plan.outputs import StepOutputData, StepOutputHandle
 from dagster.core.execution.resolve_versions import resolve_step_output_versions
-from dagster.core.storage.intermediate_storage import IntermediateStorageAdapter
 from dagster.core.storage.io_manager import IOManager
 from dagster.core.storage.tags import MEMOIZED_RUN_TAG
 from dagster.core.types.dagster_type import DagsterType, DagsterTypeKind
@@ -58,6 +57,7 @@ def _step_output_error_checked_user_event_sequence(
     check.generator_param(user_event_sequence, "user_event_sequence")
 
     step = step_context.step
+    op_label = step_context.describe_op()
     output_names = list([output_def.name for output_def in step.step_outputs])
     seen_outputs: Set[str] = set()
     seen_mapping_keys: Dict[str, Set[str]] = defaultdict(set)
@@ -71,11 +71,8 @@ def _step_output_error_checked_user_event_sequence(
         output = user_event
         if not step.has_step_output(cast(str, output.output_name)):
             raise DagsterInvariantViolationError(
-                'Core compute for solid "{handle}" returned an output '
-                '"{output.output_name}" that does not exist. The available '
-                "outputs are {output_names}".format(
-                    handle=str(step.solid_handle), output=output, output_names=output_names
-                )
+                f'Core compute for {op_label} returned an output "{output.output_name}" that does '
+                f"not exist. The available outputs are {output_names}"
             )
 
         step_output = step.step_output_named(cast(str, output.output_name))
@@ -86,27 +83,25 @@ def _step_output_error_checked_user_event_sequence(
         if isinstance(output, Output):
             if output.output_name in seen_outputs:
                 raise DagsterInvariantViolationError(
-                    'Compute for solid "{handle}" returned an output '
-                    '"{output.output_name}" multiple times'.format(
-                        handle=str(step.solid_handle), output=output
-                    )
+                    f'Compute for {op_label} returned an output "{output.output_name}" multiple '
+                    "times"
                 )
 
             if output_def.is_dynamic:
                 raise DagsterInvariantViolationError(
-                    f'Compute for solid "{step.solid_handle}" for output "{output.output_name}" '
-                    "defined as dynamic must yield DynamicOutput, got Output."
+                    f'Compute for {op_label} for output "{output.output_name}" defined as dynamic '
+                    "must yield DynamicOutput, got Output."
                 )
         else:
             if not output_def.is_dynamic:
                 raise DagsterInvariantViolationError(
-                    f'Compute for solid "{step.solid_handle}" yielded a DynamicOutput, '
-                    "but did not use DynamicOutputDefinition."
+                    f"Compute for {op_label} yielded a DynamicOutput, but did not use "
+                    "DynamicOutputDefinition."
                 )
             if output.mapping_key in seen_mapping_keys[output.output_name]:
                 raise DagsterInvariantViolationError(
-                    f'Compute for solid "{step.solid_handle}" yielded a DynamicOutput with '
-                    f'mapping_key "{output.mapping_key}" multiple times.'
+                    f"Compute for {op_label} yielded a DynamicOutput with mapping_key "
+                    f'"{output.mapping_key}" multiple times.'
                 )
             seen_mapping_keys[output.output_name].add(output.mapping_key)
 
@@ -118,16 +113,14 @@ def _step_output_error_checked_user_event_sequence(
         if not step_output_def.name in seen_outputs and not step_output_def.optional:
             if step_output_def.dagster_type.kind == DagsterTypeKind.NOTHING:
                 step_context.log.info(
-                    'Emitting implicit Nothing for output "{output}" on solid {solid}'.format(
-                        output=step_output_def.name, solid={str(step.solid_handle)}
-                    )
+                    f'Emitting implicit Nothing for output "{step_output_def.name}" on {op_label}'
                 )
                 yield Output(output_name=step_output_def.name, value=None)
             elif not step_output_def.is_dynamic:
                 raise DagsterStepOutputNotFoundError(
-                    'Core compute for solid "{handle}" did not return an output '
-                    'for non-optional output "{step_output_def.name}"'.format(
-                        handle=str(step.solid_handle), step_output_def=step_output_def
+                    (
+                        f"Core compute for {op_label} did not return an output for non-optional "
+                        f'output "{step_output_def.name}"'
                     ),
                     step_key=step.key,
                     output_name=step_output_def.name,
@@ -178,12 +171,14 @@ def _type_checked_event_sequence_for_input(
     input_def = step_input.source.get_input_def(step_context.pipeline_def)
     dagster_type = input_def.dagster_type
     type_check_context = step_context.for_type(dagster_type)
+    input_type = type(input_value)
+    op_label = step_context.describe_op()
+
     with user_code_error_boundary(
         DagsterTypeCheckError,
         lambda: (
-            f'Error occurred while type-checking input "{input_name}" of solid '
-            f'"{str(step_context.step.solid_handle)}", with Python type {type(input_value)} and '
-            f"Dagster type {dagster_type.display_name}"
+            f'Error occurred while type-checking input "{input_name}" of {op_label}, with Python '
+            f"type {input_type} and Dagster type {dagster_type.display_name}"
         ),
         log_manager=type_check_context.log,
     ):
@@ -219,12 +214,14 @@ def _type_check_output(
 
     dagster_type = step_output_def.dagster_type
     type_check_context = step_context.for_type(dagster_type)
+    op_label = step_context.describe_op()
+    output_type = type(output.value)
+
     with user_code_error_boundary(
         DagsterTypeCheckError,
         lambda: (
-            f'Error occurred while type-checking output "{output.output_name}" of solid '
-            f'"{str(step_context.step.solid_handle)}", with Python type {type(output.value)} and '
-            f"Dagster type {dagster_type.display_name}"
+            f'Error occurred while type-checking output "{output.output_name}" of {op_label}, with '
+            f"Python type {output_type} and Dagster type {dagster_type.display_name}"
         ),
         log_manager=type_check_context.log,
     ):
@@ -544,9 +541,6 @@ def _store_output(
         step_context,
         output_name=step_output_handle.output_name,
         manager_key=output_def.io_manager_key,
-        message_override=f'Handled input "{step_output_handle.output_name}" using intermediate storage'
-        if isinstance(output_manager, IntermediateStorageAdapter)
-        else None,
         metadata_entries=[
             entry for entry in manager_metadata_entries if isinstance(entry, EventMetadataEntry)
         ],

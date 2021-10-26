@@ -1,5 +1,6 @@
 import gzip
 import io
+import uuid
 from os import path
 from typing import List
 
@@ -26,11 +27,12 @@ ROOT_ADDRESS_STATIC_RESOURCES = [
     "/manifest.json",
     "/favicon.ico",
     "/favicon.png",
+    "/favicon.svg",
+    "/favicon-run-pending.svg",
+    "/favicon-run-failed.svg",
+    "/favicon-run-success.svg",
     "/asset-manifest.json",
     "/robots.txt",
-    "/favicon_failed.ico",
-    "/favicon_pending.ico",
-    "/favicon_success.ico",
 ]
 
 
@@ -115,6 +117,7 @@ class DagitWebserver(GraphQLServer):
                     rendered_template.replace('href="/', f'href="{self._app_path_prefix}/')
                     .replace('src="/', f'src="{self._app_path_prefix}/')
                     .replace("__PATH_PREFIX__", self._app_path_prefix)
+                    .replace("NONCE-PLACEHOLDER", uuid.uuid4().hex)
                 )
         except FileNotFoundError:
             raise Exception(
@@ -135,20 +138,8 @@ class DagitWebserver(GraphQLServer):
 
         return [_static_file(f) for f in ROOT_ADDRESS_STATIC_RESOURCES]
 
-    def build_routes(self):
+    def build_static_routes(self):
         return [
-            Route("/dagit_info", self.dagit_info_endpoint),
-            Route(
-                "/graphql",
-                self.graphql_http_endpoint,
-                name="graphql-http",
-                methods=["GET", "POST"],
-            ),
-            WebSocketRoute(
-                "/graphql",
-                self.graphql_ws_endpoint,
-                name="graphql-ws",
-            ),
             # static resources addressed at /static/
             Mount(
                 "/static",
@@ -169,18 +160,39 @@ class DagitWebserver(GraphQLServer):
             ),
             # specific static resources addressed at /
             *self.root_static_file_routes(),
-            # download file endpoints
-            Route(
-                "/download/{run_id:str}/{step_key:str}/{file_type:str}",
-                self.download_compute_logs_endpoint,
-            ),
-            Route(
-                "/download_debug/{run_id:str}",
-                self.download_debug_file_endpoint,
-            ),
-            Route("/{path:path}", self.index_html_endpoint),
-            Route("/", self.index_html_endpoint),
         ]
+
+    def build_routes(self):
+        return (
+            [
+                Route("/dagit_info", self.dagit_info_endpoint),
+                Route(
+                    "/graphql",
+                    self.graphql_http_endpoint,
+                    name="graphql-http",
+                    methods=["GET", "POST"],
+                ),
+                WebSocketRoute(
+                    "/graphql",
+                    self.graphql_ws_endpoint,
+                    name="graphql-ws",
+                ),
+            ]
+            + self.build_static_routes()
+            + [
+                # download file endpoints
+                Route(
+                    "/download/{run_id:str}/{step_key:str}/{file_type:str}",
+                    self.download_compute_logs_endpoint,
+                ),
+                Route(
+                    "/download_debug/{run_id:str}",
+                    self.download_debug_file_endpoint,
+                ),
+                Route("/{path:path}", self.index_html_endpoint),
+                Route("/", self.index_html_endpoint),
+            ]
+        )
 
 
 def default_app(debug=False):

@@ -33,6 +33,7 @@ describe('Repository options', () => {
       Pipeline: () => ({
         id: () => 'my_pipeline',
         name: () => 'my_pipeline',
+        modes: () => new MockList(1),
       }),
     };
 
@@ -263,7 +264,7 @@ describe('Repository options', () => {
         </TestProvider>,
       );
 
-      // One repo by default, so three pipelines.
+      // Three links: two pipelines, one repo.
       await waitFor(() => {
         expect(screen.queryAllByRole('link')).toHaveLength(3);
       });

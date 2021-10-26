@@ -2,8 +2,9 @@ from functools import update_wrapper
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from dagster import check
-from dagster.utils.backcompat import experimental_decorator
+from dagster.core.decorator_utils import format_docstring_for_description
 
+from ..config import ConfigMapping
 from ..graph import GraphDefinition
 from ..input import GraphIn, InputDefinition
 from ..output import GraphOut, OutputDefinition
@@ -18,6 +19,8 @@ class _Graph:
         output_defs: Optional[List[OutputDefinition]] = None,
         ins: Optional[Dict[str, GraphIn]] = None,
         out: Optional[Union[GraphOut, Dict[str, GraphOut]]] = None,
+        tags: Optional[Dict[str, Any]] = None,
+        config_mapping: Optional[ConfigMapping] = None,
     ):
         self.name = check.opt_str_param(name, "name")
         self.description = check.opt_str_param(description, "description")
@@ -28,6 +31,8 @@ class _Graph:
         )
         self.ins = ins
         self.out = out
+        self.tags = tags
+        self.config_mapping = check.opt_inst_param(config_mapping, "config_mapping", ConfigMapping)
 
     def __call__(self, fn: Callable[..., Any]) -> GraphDefinition:
         check.callable_param(fn, "fn")
@@ -66,37 +71,38 @@ class _Graph:
             provided_input_defs=input_defs,
             provided_output_defs=output_defs,
             ignore_output_from_composition_fn=False,
-            config_schema=None,
-            config_fn=None,
+            config_mapping=self.config_mapping,
         )
 
         graph_def = GraphDefinition(
             name=self.name,
             dependencies=dependencies,
             node_defs=solid_defs,
-            description=self.description or fn.__doc__,
+            description=self.description or format_docstring_for_description(fn),
             input_mappings=input_mappings,
             output_mappings=output_mappings,
-            config_mapping=config_mapping,
+            config=config_mapping,
             positional_inputs=positional_inputs,
+            tags=self.tags,
         )
         update_wrapper(graph_def, fn)
         return graph_def
 
 
-@experimental_decorator
 def graph(
-    name: Optional[str] = None,
+    name: Union[Callable[..., Any], Optional[str]] = None,
     description: Optional[str] = None,
     input_defs: Optional[List[InputDefinition]] = None,
     output_defs: Optional[List[OutputDefinition]] = None,
     ins: Optional[Dict[str, GraphIn]] = None,
     out: Optional[Union[GraphOut, Dict[str, GraphOut]]] = None,
+    tags: Optional[Dict[str, Any]] = None,
+    config: Optional[Union[ConfigMapping, Dict[str, Any]]] = None,
 ) -> Union[_Graph, GraphDefinition]:
     """Create a graph with the specified parameters from the decorated composition function.
 
     Using this decorator allows you to build up a dependency graph by writing a
-    function that invokes solids (or other graphs) and passes the output to subsequent invocations.
+    function that invokes ops (or other graphs) and passes the output to subsequent invocations.
 
     Args:
         name (Optional[str]):
@@ -130,10 +136,23 @@ def graph(
             not use yield.
 
             To map multiple outputs, return a dictionary from the composition function.
+       tags (Optional[Dict[str, Any]]): Arbitrary metadata for any execution run of the graph.
+            Values that are not strings will be json encoded and must meet the criteria that
+            `json.loads(json.dumps(value)) == value`.  These tag values may be overwritten by tag
+            values provided at invocation time.
     """
     if callable(name):
         check.invariant(description is None)
         return _Graph()(name)
+
+    config_mapping = None
+    # Case 1: a dictionary of config is provided, convert to config mapping.
+    if config is not None and not isinstance(config, ConfigMapping):
+        config = check.dict_param(config, "config", key_type=str)
+        config_mapping = ConfigMapping(config_fn=lambda _: config, config_schema=None)
+    # Case 2: actual config mapping is provided.
+    else:
+        config_mapping = config
 
     return _Graph(
         name=name,
@@ -142,4 +161,6 @@ def graph(
         output_defs=output_defs,
         ins=ins,
         out=out,
+        tags=tags,
+        config_mapping=config_mapping,
     )

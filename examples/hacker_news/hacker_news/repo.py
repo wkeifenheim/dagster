@@ -1,28 +1,40 @@
-from dagster import repository
+from dagster import build_schedule_from_partitioned_job, repository
 
-from .pipelines.dbt_pipeline import dbt_pipeline
-from .pipelines.download_pipeline import download_pipeline
-from .pipelines.story_recommender import story_recommender
-from .schedules.hourly_hn_download_schedule import hourly_hn_download_schedule
-from .sensors.download_pipeline_finished_sensor import dbt_on_hn_download_finished
-from .sensors.hn_tables_updated_sensor import story_recommender_on_hn_table_update
-from .sensors.slack_on_pipeline_failure_sensor import make_pipeline_failure_sensor
+from .jobs.dbt_metrics import dbt_prod_job, dbt_staging_job
+from .jobs.hacker_news_api_download import (
+    download_local_job,
+    download_prod_job,
+    download_staging_job,
+)
+from .jobs.story_recommender import story_recommender_prod_job, story_recommender_staging_job
+from .sensors.hn_tables_updated_sensor import make_hn_tables_updated_sensor
+from .sensors.slack_on_failure_sensor import make_slack_on_failure_sensor
 
 
 @repository
-def hacker_news_repository():
-    pipelines = [
-        download_pipeline,
-        story_recommender,
-        dbt_pipeline,
-    ]
-    schedules = [
-        hourly_hn_download_schedule,
-    ]
-    sensors = [
-        make_pipeline_failure_sensor(base_url="my_dagit_url.com"),
-        story_recommender_on_hn_table_update,
-        dbt_on_hn_download_finished,
+def hacker_news_local():
+    return [
+        download_local_job,
+        story_recommender_staging_job,
+        dbt_staging_job,
     ]
 
-    return pipelines + schedules + sensors
+
+@repository
+def hacker_news_prod():
+    return [
+        build_schedule_from_partitioned_job(download_prod_job),
+        make_slack_on_failure_sensor(base_url="my_prod_dagit_url.com"),
+        make_hn_tables_updated_sensor(story_recommender_prod_job),
+        make_hn_tables_updated_sensor(dbt_prod_job),
+    ]
+
+
+@repository
+def hacker_news_staging():
+    return [
+        build_schedule_from_partitioned_job(download_staging_job),
+        make_slack_on_failure_sensor(base_url="my_staging_dagit_url.com"),
+        make_hn_tables_updated_sensor(story_recommender_staging_job),
+        make_hn_tables_updated_sensor(dbt_staging_job),
+    ]

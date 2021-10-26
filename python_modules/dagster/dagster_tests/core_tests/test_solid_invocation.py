@@ -16,6 +16,7 @@ from dagster import (
     OutputDefinition,
     RetryRequested,
     Selector,
+    build_op_context,
     build_solid_context,
     composite_solid,
     execute_solid,
@@ -29,6 +30,7 @@ from dagster.core.errors import (
     DagsterInvalidInvocationError,
     DagsterInvalidPropertyError,
     DagsterInvariantViolationError,
+    DagsterResourceFunctionError,
     DagsterStepOutputNotFoundError,
     DagsterTypeCheckDidNotPass,
 )
@@ -84,6 +86,35 @@ def test_solid_invocation_none_arg():
     assert result == 5
 
 
+def test_solid_invocation_context_arg():
+    @solid
+    def basic_solid(context):
+        context.log.info("yay")
+
+    basic_solid(None)
+    basic_solid(build_solid_context())
+    basic_solid(context=None)
+    basic_solid(context=build_solid_context())
+
+
+def test_solid_invocation_empty_run_config():
+    @solid
+    def basic_solid(context):
+        assert context.run_config is not None
+        assert context.run_config == {"resources": {}}
+
+    basic_solid(context=build_solid_context())
+
+
+def test_solid_invocation_run_config_with_config():
+    @solid(config_schema={"foo": str})
+    def basic_solid(context):
+        assert context.run_config
+        assert context.run_config["solids"] == {"basic_solid": {"config": {"foo": "bar"}}}
+
+    basic_solid(build_solid_context(solid_config={"foo": "bar"}))
+
+
 def test_solid_invocation_out_of_order_input_defs():
     @solid(input_defs=[InputDefinition("x"), InputDefinition("y")])
     def check_correct_order(y, x):
@@ -120,7 +151,7 @@ def test_solid_invocation_with_resources():
     # Ensure that error is raised when we attempt to invoke with a None context
     with pytest.raises(
         DagsterInvalidInvocationError,
-        match='Solid "solid_requires_resources" has required resources, but no context was '
+        match='solid "solid_requires_resources" has required resources, but no context was '
         "provided.",
     ):
         solid_requires_resources(None)
@@ -130,7 +161,7 @@ def test_solid_invocation_with_resources():
     context = build_solid_context()
     with pytest.raises(
         DagsterInvalidInvocationError,
-        match='Solid "solid_requires_resources" requires resource "foo", but no resource '
+        match='solid "solid_requires_resources" requires resource "foo", but no resource '
         "with that key was found on the context.",
     ):
         solid_requires_resources(context)
@@ -193,7 +224,7 @@ def test_solid_invocation_with_config():
     # Ensure that error is raised when we attempt to invoke with a None context
     with pytest.raises(
         DagsterInvalidInvocationError,
-        match='Solid "solid_requires_config" has required config schema, but no context was '
+        match='solid "solid_requires_config" has required config schema, but no context was '
         "provided.",
     ):
         solid_requires_config(None)
@@ -219,7 +250,7 @@ def test_solid_invocation_with_config():
     result = solid_requires_config.configured({"foo": "bar"}, name="configured_solid")(None)
     assert result == 5
 
-    result = solid_requires_config(build_solid_context(config={"foo": "bar"}))
+    result = solid_requires_config(build_solid_context(solid_config={"foo": "bar"}))
     assert result == 5
 
 
@@ -249,7 +280,9 @@ def test_solid_invocation_default_config():
         assert context.solid_config["baz"] == "bar"
         return context.solid_config["foo"] + context.solid_config["baz"]
 
-    assert solid_requires_config_partial(build_solid_context(config={"baz": "bar"})) == "barbar"
+    assert (
+        solid_requires_config_partial(build_solid_context(solid_config={"baz": "bar"})) == "barbar"
+    )
 
 
 def test_solid_invocation_dict_config():
@@ -258,7 +291,7 @@ def test_solid_invocation_dict_config():
         assert context.solid_config == {"foo": "bar"}
         return context.solid_config
 
-    assert solid_requires_dict(build_solid_context(config={"foo": "bar"})) == {"foo": "bar"}
+    assert solid_requires_dict(build_solid_context(solid_config={"foo": "bar"})) == {"foo": "bar"}
 
     @solid(config_schema=Noneable(dict))
     def solid_noneable_dict(context):
@@ -297,7 +330,7 @@ def test_solid_invocation_kitchen_sink_config():
         "optional_list_of_optional_string": ["foo", None],
     }
 
-    assert kitchen_sink(build_solid_context(config=solid_config_one)) == solid_config_one
+    assert kitchen_sink(build_solid_context(solid_config=solid_config_one)) == solid_config_one
 
 
 def test_solid_with_inputs():
@@ -355,8 +388,8 @@ def test_attempted_invocation_in_composition():
         pass
 
     msg = (
-        "Must pass the output from previous solid invocations or inputs to the composition "
-        "function as inputs when invoking solids during composition."
+        "Must pass the output from previous node invocations or inputs to the composition "
+        "function as inputs when invoking nodes during composition."
     )
     with pytest.raises(
         DagsterInvalidDefinitionError,
@@ -583,7 +616,6 @@ def test_output_sent_multiple_times():
     [
         ("pipeline_run", None),
         ("step_launcher", None),
-        ("run_config", None),
         ("pipeline_def", None),
         ("pipeline_name", None),
         ("mode_def", None),
@@ -824,7 +856,7 @@ def test_dynamic_output_non_gen():
 
     with pytest.raises(
         DagsterInvariantViolationError,
-        match="Attempted to return a DynamicOutput from solid. DynamicOutputs are only supported "
+        match="Attempted to return a DynamicOutput from solid. DynamicOuts are only supported "
         "using yield syntax.",
     ):
         should_not_work()
@@ -839,7 +871,59 @@ def test_dynamic_output_async_non_gen():
     loop = asyncio.get_event_loop()
     with pytest.raises(
         DagsterInvariantViolationError,
-        match="Attempted to return a DynamicOutput from solid. DynamicOutputs are only supported "
+        match="Attempted to return a DynamicOutput from solid. DynamicOuts are only supported "
         "using yield syntax.",
     ):
         loop.run_until_complete(should_not_work())
+
+
+def test_solid_invocation_with_bad_resources(capsys):
+    @resource
+    def bad_resource(_):
+        if 1 == 1:
+            raise Exception("oopsy daisy")
+        yield "foo"
+
+    @solid(required_resource_keys={"my_resource"})
+    def solid_requires_resource(context):
+        return context.resources.my_resource
+
+    with pytest.raises(
+        DagsterResourceFunctionError,
+        match="Error executing resource_fn on ResourceDefinition my_resource",
+    ):
+        with build_solid_context(resources={"my_resource": bad_resource}) as context:
+            assert solid_requires_resource(context) == "foo"
+
+    captured = capsys.readouterr()
+    # make sure there are no exceptions in the context destructor (__del__)
+    assert "Exception ignored in" not in captured.err
+
+
+@pytest.mark.parametrize("context_builder", [build_solid_context, build_op_context])
+def test_build_context_with_resources_config(context_builder):
+    @resource(config_schema=str)
+    def my_resource(context):
+        assert context.resource_config == "foo"
+
+    @solid(required_resource_keys={"my_resource"})
+    def my_solid(context):
+        assert context.run_config["resources"]["my_resource"] == {"config": "foo"}
+
+    context = context_builder(
+        resources={"my_resource": my_resource},
+        resources_config={"my_resource": {"config": "foo"}},
+    )
+
+    my_solid(context)
+
+    # bad resource config case
+
+    with pytest.raises(
+        DagsterInvalidConfigError,
+        match='Received unexpected config entry "bad_resource" at the root.',
+    ):
+        context_builder(
+            resources={"my_resource": my_resource},
+            resources_config={"bad_resource": {"config": "foo"}},
+        )

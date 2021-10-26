@@ -20,12 +20,14 @@ from dagster.core.definitions import (
     Failure,
     FloatMetadataEntryData,
     GraphDefinition,
+    GraphIn,
+    GraphOut,
     HookDefinition,
     In,
     InputDefinition,
     InputMapping,
     IntMetadataEntryData,
-    IntermediateStorageDefinition,
+    JobDefinition,
     JsonMetadataEntryData,
     LoggerDefinition,
     MarkdownMetadataEntryData,
@@ -40,6 +42,7 @@ from dagster.core.definitions import (
     Partition,
     PartitionScheduleDefinition,
     PartitionSetDefinition,
+    PartitionedConfig,
     PathMetadataEntryData,
     PipelineDefinition,
     PipelineFailureSensorContext,
@@ -67,17 +70,20 @@ from dagster.core.definitions import (
     UrlMetadataEntryData,
     asset_sensor,
     build_init_logger_context,
+    build_schedule_from_partitioned_job,
     composite_solid,
+    config_mapping,
     daily_partitioned_config,
     daily_schedule,
     default_executors,
+    dynamic_partitioned_config,
     executor,
     failure_hook,
     graph,
     hourly_partitioned_config,
     hourly_schedule,
     in_process_executor,
-    intermediate_storage,
+    job,
     lambda_solid,
     logger,
     make_values_resource,
@@ -97,6 +103,7 @@ from dagster.core.definitions import (
     schedule_from_partitions,
     sensor,
     solid,
+    static_partitioned_config,
     success_hook,
     weekly_partitioned_config,
     weekly_schedule,
@@ -127,6 +134,7 @@ from dagster.core.errors import (
     DagsterSubprocessError,
     DagsterTypeCheckDidNotPass,
     DagsterTypeCheckError,
+    DagsterUnknownPartitionError,
     DagsterUnknownResourceError,
     DagsterUnmetExecutorRequirementsError,
     DagsterUserCodeExecutionError,
@@ -138,7 +146,7 @@ from dagster.core.execution.api import (
     reexecute_pipeline,
     reexecute_pipeline_iterator,
 )
-from dagster.core.execution.context.compute import SolidExecutionContext
+from dagster.core.execution.context.compute import OpExecutionContext, SolidExecutionContext
 from dagster.core.execution.context.hook import HookContext, build_hook_context
 from dagster.core.execution.context.init import InitResourceContext, build_init_resource_context
 from dagster.core.execution.context.input import InputContext, build_input_context
@@ -146,6 +154,7 @@ from dagster.core.execution.context.invocation import build_op_context, build_so
 from dagster.core.execution.context.logger import InitLoggerContext
 from dagster.core.execution.context.output import OutputContext, build_output_context
 from dagster.core.execution.context.system import TypeCheckContext
+from dagster.core.execution.execute_in_process_result import ExecuteInProcessResult
 from dagster.core.execution.results import (
     CompositeSolidExecutionResult,
     PipelineExecutionResult,
@@ -165,7 +174,6 @@ from dagster.core.storage.event_log import (
 )
 from dagster.core.storage.file_manager import FileHandle, LocalFileHandle, local_file_manager
 from dagster.core.storage.fs_io_manager import custom_path_fs_io_manager, fs_io_manager
-from dagster.core.storage.init import InitIntermediateStorageContext
 from dagster.core.storage.io_manager import IOManager, IOManagerDefinition, io_manager
 from dagster.core.storage.mem_io_manager import mem_io_manager
 from dagster.core.storage.memoizable_io_manager import MemoizableIOManager
@@ -174,13 +182,6 @@ from dagster.core.storage.root_input_manager import (
     RootInputManager,
     RootInputManagerDefinition,
     root_input_manager,
-)
-from dagster.core.storage.system_storage import (
-    build_intermediate_storage_from_object_store,
-    default_intermediate_storage_defs,
-    fs_intermediate_storage,
-    io_manager_from_intermediate_storage,
-    mem_intermediate_storage,
 )
 from dagster.core.storage.tags import MEMOIZED_RUN_TAG
 from dagster.core.types.config_schema import (
@@ -194,7 +195,6 @@ from dagster.core.types.decorator import (
     make_python_type_usable_as_dagster_type,
     usable_as_dagster_type,
 )
-from dagster.core.types.marshal import SerializationStrategy
 from dagster.core.types.python_dict import Dict
 from dagster.core.types.python_set import Set
 from dagster.core.types.python_tuple import Tuple
@@ -233,11 +233,13 @@ __all__ = [
     "Failure",
     "Field",
     "GraphDefinition",
+    "GraphIn",
+    "GraphOut",
     "HookDefinition",
+    "JobDefinition",
     "In",
     "InputDefinition",
     "InputMapping",
-    "IntermediateStorageDefinition",
     "JsonMetadataEntryData",
     "LoggerDefinition",
     "build_init_logger_context",
@@ -274,9 +276,10 @@ __all__ = [
     # Decorators
     "asset_sensor",
     "composite_solid",
+    "config_mapping",
     "executor",
     "graph",
-    "intermediate_storage",
+    "job",
     "lambda_solid",
     "logger",
     "op",
@@ -302,8 +305,9 @@ __all__ = [
     "InitExecutorContext",
     "InitLoggerContext",
     "InitResourceContext",
+    "ExecuteInProcessResult",
     "build_init_resource_context",
-    "InitIntermediateStorageContext",
+    "OpExecutionContext",
     "PipelineExecutionResult",
     "RetryRequested",
     "SolidExecutionResult",
@@ -320,15 +324,11 @@ __all__ = [
     "PipelineRun",
     "PipelineRunStatus",
     "default_executors",
-    "default_intermediate_storage_defs",
     "execute_pipeline_iterator",
     "execute_pipeline",
     "validate_run_config",
     "execute_solid_within_pipeline",
-    "fs_intermediate_storage",
     "in_process_executor",
-    "mem_intermediate_storage",
-    "io_manager_from_intermediate_storage",
     "multiprocess_executor",
     "multiple_process_executor_requirements",
     "reconstructable",
@@ -350,13 +350,13 @@ __all__ = [
     "DagsterSubprocessError",
     "DagsterTypeCheckDidNotPass",
     "DagsterTypeCheckError",
+    "DagsterUnknownPartitionError",
     "DagsterUnknownResourceError",
     "DagsterUnmetExecutorRequirementsError",
     "DagsterUserCodeExecutionError",
     # Logging
     "DagsterLogManager",
     # Utilities
-    "build_intermediate_storage_from_object_store",
     "check_dagster_type",
     "execute_solid",
     "execute_solids_within_pipeline",
@@ -376,7 +376,6 @@ __all__ = [
     "List",
     "Nothing",
     "Optional",
-    "SerializationStrategy",
     "Set",
     "String",
     "Tuple",
@@ -411,12 +410,16 @@ __all__ = [
     "EventRecordsFilter",
     "RunShardedEventsCursor",
     # partitions and schedules
+    "build_schedule_from_partitioned_job",
     "schedule_from_partitions",
+    "dynamic_partitioned_config",
+    "static_partitioned_config",
     "daily_partitioned_config",
     "hourly_partitioned_config",
     "monthly_partitioned_config",
     "weekly_partitioned_config",
     "Partition",
+    "PartitionedConfig",
     "PartitionScheduleDefinition",
     "PartitionSetDefinition",
     "RunRequest",

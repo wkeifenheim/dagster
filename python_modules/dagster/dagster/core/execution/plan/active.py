@@ -119,11 +119,11 @@ class ActiveExecution:
             )
             if self._interrupted:
                 raise DagsterExecutionInterruptedError(
-                    f"Execution of pipeline was interrupted before completing the execution plan. {state_str}"
+                    f"Execution was interrupted before completing the execution plan. {state_str}"
                 )
             else:
                 raise DagsterInvariantViolationError(
-                    f"Execution of pipeline finished without completing the execution plan. {state_str}"
+                    f"Execution finished without completing the execution plan. {state_str}"
                 )
 
         # See verify_complete - steps for which we did not observe a failure/success event are in an unknown
@@ -131,12 +131,12 @@ class ActiveExecution:
         if len(self._unknown_state) > 0:
             if self._interrupted:
                 raise DagsterExecutionInterruptedError(
-                    "Execution of pipeline exited with steps {step_list} in an unknown state after "
+                    "Execution exited with steps {step_list} in an unknown state after "
                     "being interrupted.".format(step_list=self._unknown_state)
                 )
             else:
                 raise DagsterUnknownStepStateError(
-                    "Execution of pipeline exited with steps {step_list} in an unknown state to this process.\n"
+                    "Execution exited with steps {step_list} in an unknown state to this process.\n"
                     "This was likely caused by losing communication with the process performing step execution.".format(
                         step_list=self._unknown_state
                     )
@@ -471,3 +471,20 @@ class ActiveExecution:
         if step_key in self._gathering_dynamic_outputs:
             self._successful_dynamic_outputs[step_key] = self._gathering_dynamic_outputs[step_key]
             self._new_dynamic_mappings = True
+
+    def rebuild_from_events(self, dagster_events: List[DagsterEvent]) -> List[ExecutionStep]:
+        """
+        Replay events to rebuild the execution state and continue after a failure.
+
+        Returns a list of steps that are possibly in flight. Current status of the event log implies
+        that the previous run worker might have crashed before launching these steps, or it may have
+        launched them but they have yet to report a STEP_START event.
+        """
+
+        self.get_steps_to_execute()
+
+        for event in dagster_events:
+            self.handle_event(event)
+            self.get_steps_to_execute()
+
+        return [self.get_step_by_key(step_key) for step_key in self._in_flight]

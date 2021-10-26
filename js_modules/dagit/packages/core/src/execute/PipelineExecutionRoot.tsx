@@ -1,10 +1,9 @@
 import {gql, useQuery} from '@apollo/client';
-import {IconNames} from '@blueprintjs/icons';
 import * as React from 'react';
 
-import {useFeatureFlags} from '../app/Flags';
 import {explorerPathFromString, useStripSnapshotFromPath} from '../pipelines/PipelinePathUtils';
 import {useJobTitle} from '../pipelines/useJobTitle';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 
 import {
@@ -25,9 +24,12 @@ interface Props {
 export const PipelineExecutionRoot: React.FC<Props> = (props) => {
   const {pipelinePath, repoAddress} = props;
   const explorerPath = explorerPathFromString(pipelinePath);
-  const {pipelineName, pipelineMode} = explorerPath;
-  const {flagPipelineModeTuples} = useFeatureFlags();
-  useJobTitle(explorerPath);
+  const {pipelineName} = explorerPath;
+
+  const repo = useRepository(repoAddress);
+  const isJob = isThisThingAJob(repo, pipelineName);
+
+  useJobTitle(explorerPath, isJob);
   useStripSnapshotFromPath(props);
 
   const {name: repositoryName, location: repositoryLocationName} = repoAddress;
@@ -56,14 +58,15 @@ export const PipelineExecutionRoot: React.FC<Props> = (props) => {
 
     return pipelineName !== '' ? (
       <ExecutionSessionContainerError
-        icon={IconNames.FLOW_BRANCH}
-        title={flagPipelineModeTuples ? 'Job not found' : 'Pipeline not found'}
+        icon="error"
+        title={isJob ? 'Job not found' : 'Pipeline not found'}
         description={message}
       />
     ) : (
       <ExecutionSessionContainerError
-        icon={IconNames.FLOW_BRANCH}
-        title={flagPipelineModeTuples ? 'Select a job' : 'Select a pipeline'}
+        icon="no-results"
+        title={isJob ? 'Select a job' : 'Select a pipeline'}
+        description={message}
       />
     );
   }
@@ -75,7 +78,7 @@ export const PipelineExecutionRoot: React.FC<Props> = (props) => {
   if (pipelineOrError && pipelineOrError.__typename === 'PythonError') {
     return (
       <ExecutionSessionContainerError
-        icon={IconNames.ERROR}
+        icon="error"
         title="Python Error"
         description={pipelineOrError.message}
       />
@@ -84,7 +87,7 @@ export const PipelineExecutionRoot: React.FC<Props> = (props) => {
   if (partitionSetsOrError && partitionSetsOrError.__typename === 'PythonError') {
     return (
       <ExecutionSessionContainerError
-        icon={IconNames.ERROR}
+        icon="error"
         title="Python Error"
         description={partitionSetsOrError.message}
       />
@@ -95,7 +98,6 @@ export const PipelineExecutionRoot: React.FC<Props> = (props) => {
     <React.Suspense fallback={<div />}>
       <ExecutionSessionContainer
         pipeline={pipelineOrError}
-        pipelineMode={flagPipelineModeTuples ? pipelineMode : undefined}
         partitionSets={partitionSetsOrError}
         repoAddress={repoAddress}
       />
@@ -106,6 +108,7 @@ export const PipelineExecutionRoot: React.FC<Props> = (props) => {
 const EXECUTION_SESSION_CONTAINER_PIPELINE_FRAGMENT = gql`
   fragment ExecutionSessionContainerPipelineFragment on Pipeline {
     id
+    isJob
     ...ConfigEditorGeneratorPipelineFragment
     modes {
       id

@@ -5,6 +5,9 @@ from docs_snippets.guides.dagster.graph_job_op import (
     composite_solid,
     composite_solid_ins_out,
     composite_solid_multi_out,
+    execute_simple_graph,
+    executor_config_job,
+    executor_config_switch,
     graph_job_test,
     graph_with_config,
     graph_with_config_and_schedule,
@@ -33,12 +36,15 @@ from docs_snippets.guides.dagster.graph_job_op import (
 
 jobs = [
     (simple_graph, "do_it_all"),
-    (graph_with_resources, "do_it_all_job"),
-    (graph_with_config, "do_it_all_job"),
-    (graph_job_test, "do_it_all_job"),
+    (graph_with_resources, "do_it_all"),
+    (graph_with_config, "do_it_all"),
+    (graph_job_test, "do_it_all"),
     (nested_graphs, "do_it_all"),
     (nested_graphs_ins_out, "do_it_all"),
     (nested_graphs_multi_out, "do_it_all"),
+    (executor_config_job, "do_it_all"),
+    (executor_config_switch, "do_it_all"),
+    (executor_config_switch, "do_it_all_in_proc"),
 ]
 job_repos = [
     (prod_dev_jobs, "prod_repo"),
@@ -162,3 +168,11 @@ def test_ops():
             raise Exception(
                 f"Error while executing op or solid '{op_or_solid.name}' from module '{module.__name__}'"
             ) from ex
+
+
+def test_execute_nested_graph():
+    assert nested_graphs.nested_output == 5
+
+
+def test_execute_simple_graph():
+    execute_simple_graph.execute_simple_graph()

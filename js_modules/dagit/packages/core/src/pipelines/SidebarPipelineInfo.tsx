@@ -1,7 +1,6 @@
 import {gql} from '@apollo/client';
 import * as React from 'react';
 
-import {useFeatureFlags} from '../app/Flags';
 import {breakOnUnderscores} from '../app/Util';
 import {Box} from '../ui/Box';
 
@@ -13,25 +12,25 @@ import {SidebarPipelineInfoFragment} from './types/SidebarPipelineInfoFragment';
 const NO_DESCRIPTION = '';
 
 interface ISidebarPipelineInfoProps {
+  isGraph: boolean;
   pipeline: SidebarPipelineInfoFragment;
 }
 
-export const SidebarPipelineInfo: React.FC<ISidebarPipelineInfoProps> = ({pipeline}) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
+export const SidebarPipelineInfo: React.FC<ISidebarPipelineInfoProps> = ({isGraph, pipeline}) => {
   return (
     <div>
-      <Box padding={12}>
-        <SidebarSubhead>{flagPipelineModeTuples ? 'Graph' : 'Pipeline'}</SidebarSubhead>
+      <Box padding={{vertical: 16, horizontal: 24}}>
+        <SidebarSubhead>{isGraph ? 'Graph' : 'Pipeline'}</SidebarSubhead>
         <SidebarTitle>{breakOnUnderscores(pipeline.name)}</SidebarTitle>
       </Box>
-      <SidebarSection title={'Description'}>
-        <Box padding={12}>
+      <SidebarSection title="Description">
+        <Box padding={{vertical: 16, horizontal: 24}}>
           <Description description={pipeline ? pipeline.description : NO_DESCRIPTION} />
         </Box>
       </SidebarSection>
-      {!flagPipelineModeTuples && (
-        <SidebarSection title={'Modes'} collapsedByDefault={true}>
-          <Box padding={12}>
+      {!isGraph && (
+        <SidebarSection title="Modes" collapsedByDefault={true}>
+          <Box padding={{vertical: 16, horizontal: 24}}>
             {pipeline.modes.map((mode) => (
               <SidebarModeSection key={mode.name} mode={mode} />
             ))}

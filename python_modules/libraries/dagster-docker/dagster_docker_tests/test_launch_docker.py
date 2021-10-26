@@ -4,13 +4,11 @@
 import os
 import re
 import time
-from contextlib import contextmanager
 
 import docker
 import pytest
-from dagster.core.storage.pipeline_run import PipelineRunStatus
+from dagster.core.storage.pipeline_run import PipelineRunStatus, PipelineRunsFilter
 from dagster.core.test_utils import environ, poll_for_finished_run, poll_for_step_start
-from dagster.utils.test.postgres_instance import postgres_instance_for_test
 from dagster.utils.yaml_utils import merge_yamls
 from dagster_docker.docker_run_launcher import DOCKER_CONTAINER_ID_TAG, DOCKER_IMAGE_TAG
 from dagster_test.test_project import (
@@ -23,18 +21,7 @@ from dagster_test.test_project import (
     get_test_project_workspace_and_external_pipeline,
 )
 
-IS_BUILDKITE = os.getenv("BUILDKITE") is not None
-
-
-@contextmanager
-def docker_postgres_instance(overrides=None, conn_args=None):
-    with postgres_instance_for_test(
-        __file__,
-        "test-postgres-db-docker",
-        overrides=overrides,
-        conn_args=conn_args,
-    ) as instance:
-        yield instance
+from . import IS_BUILDKITE, docker_postgres_instance
 
 
 def test_launch_docker_no_network():
@@ -70,9 +57,9 @@ def test_launch_docker_no_network():
             "params": {"connect_timeout": 2},
         },
     ) as instance:
-        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline", docker_image)
+        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline_s3", docker_image)
         with get_test_project_workspace_and_external_pipeline(
-            instance, "demo_pipeline", container_image=docker_image
+            instance, "demo_pipeline_s3", container_image=docker_image
         ) as (workspace, orig_pipeline):
 
             external_pipeline = ReOriginatedExternalPipelineForTest(
@@ -158,9 +145,9 @@ def test_launch_docker_image_on_pipeline_config():
                 }
             }
         ) as instance:
-            recon_pipeline = get_test_project_recon_pipeline("demo_pipeline", docker_image)
+            recon_pipeline = get_test_project_recon_pipeline("demo_pipeline_s3", docker_image)
             with get_test_project_workspace_and_external_pipeline(
-                instance, "demo_pipeline", container_image=docker_image
+                instance, "demo_pipeline_s3", container_image=docker_image
             ) as (workspace, orig_pipeline):
 
                 external_pipeline = ReOriginatedExternalPipelineForTest(
@@ -260,10 +247,10 @@ def test_terminate_launched_docker_run():
             _check_event_log_contains(
                 run_logs,
                 [
-                    ("PIPELINE_CANCELING", "Sending pipeline termination request"),
+                    ("PIPELINE_CANCELING", "Sending run termination request"),
                     ("STEP_FAILURE", 'Execution of step "hanging_solid" failed.'),
-                    ("PIPELINE_CANCELED", 'Execution of pipeline "hanging_pipeline" canceled.'),
-                    ("ENGINE_EVENT", "Process for pipeline exited"),
+                    ("PIPELINE_CANCELED", 'Execution of run for "hanging_pipeline" canceled.'),
+                    ("ENGINE_EVENT", "Process for run exited"),
                 ],
             )
 
@@ -298,8 +285,8 @@ def test_launch_docker_invalid_image():
             }
         }
     ) as instance:
-        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline")
-        with get_test_project_workspace_and_external_pipeline(instance, "demo_pipeline") as (
+        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline_s3")
+        with get_test_project_workspace_and_external_pipeline(instance, "demo_pipeline_s3") as (
             workspace,
             orig_pipeline,
         ):
@@ -377,7 +364,21 @@ def test_cant_combine_network_and_networks():
             pass
 
 
-def _test_launch(docker_image, launcher_config):
+def test_terminate():
+    docker_image = get_test_project_docker_image()
+    launcher_config = {
+        "env_vars": [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+        ],
+        "network": "container:test-postgres-db-docker",
+        "image": docker_image,
+    }
+
+    _test_launch(docker_image, launcher_config, terminate=True)
+
+
+def _test_launch(docker_image, launcher_config, terminate=False):
     if IS_BUILDKITE:
         launcher_config["registry"] = get_buildkite_registry_config()
     else:
@@ -399,8 +400,8 @@ def _test_launch(docker_image, launcher_config):
             }
         }
     ) as instance:
-        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline")
-        with get_test_project_workspace_and_external_pipeline(instance, "demo_pipeline") as (
+        recon_pipeline = get_test_project_recon_pipeline("demo_pipeline_s3")
+        with get_test_project_workspace_and_external_pipeline(instance, "demo_pipeline_s3") as (
             workspace,
             orig_pipeline,
         ):
@@ -415,6 +416,32 @@ def _test_launch(docker_image, launcher_config):
 
             instance.launch_run(run.run_id, workspace)
 
-            poll_for_finished_run(instance, run.run_id, timeout=60)
+            if not terminate:
+                poll_for_finished_run(instance, run.run_id, timeout=60)
 
-            assert instance.get_run_by_id(run.run_id).status == PipelineRunStatus.SUCCESS
+                assert instance.get_run_by_id(run.run_id).status == PipelineRunStatus.SUCCESS
+            else:
+                start_time = time.time()
+
+                filters = PipelineRunsFilter(
+                    run_ids=[run.run_id],
+                    statuses=[
+                        PipelineRunStatus.STARTED,
+                    ],
+                )
+
+                while True:
+                    runs = instance.get_runs(filters, limit=1)
+                    if runs:
+                        break
+                    else:
+                        time.sleep(0.1)
+                        if time.time() - start_time > 60:
+                            raise Exception("Timed out waiting for run to start")
+
+                launcher = instance.run_launcher
+                assert launcher.can_terminate(run.run_id)
+                assert launcher.terminate(run.run_id)
+
+                poll_for_finished_run(instance, run.run_id, timeout=60)
+                assert instance.get_run_by_id(run.run_id).status == PipelineRunStatus.CANCELED

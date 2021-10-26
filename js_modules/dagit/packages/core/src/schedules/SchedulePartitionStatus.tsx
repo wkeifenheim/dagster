@@ -1,16 +1,16 @@
 import {gql, useLazyQuery} from '@apollo/client';
-import {Colors} from '@blueprintjs/core';
 import qs from 'qs';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 
-import {useFeatureFlags} from '../app/Flags';
 import {assertUnreachable} from '../app/Util';
 import {StatusTable} from '../instigation/InstigationUtils';
-import {PipelineRunStatus} from '../types/globalTypes';
+import {RunStatus} from '../types/globalTypes';
 import {ButtonLink} from '../ui/ButtonLink';
+import {ColorsWIP} from '../ui/Colors';
 import {Group} from '../ui/Group';
 import {Caption} from '../ui/Text';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {RepoAddress} from '../workspace/types';
 import {workspacePathFromAddress} from '../workspace/workspacePath';
 
@@ -27,17 +27,17 @@ const calculateDisplayStatus = (partition: Partition) => {
   switch (partition.runStatus) {
     case null:
       return 'Missing';
-    case PipelineRunStatus.SUCCESS:
+    case RunStatus.SUCCESS:
       return 'Succeeded';
-    case PipelineRunStatus.FAILURE:
-    case PipelineRunStatus.CANCELED:
-    case PipelineRunStatus.CANCELING:
+    case RunStatus.FAILURE:
+    case RunStatus.CANCELED:
+    case RunStatus.CANCELING:
       return 'Failed';
-    case PipelineRunStatus.MANAGED:
-    case PipelineRunStatus.QUEUED:
-    case PipelineRunStatus.NOT_STARTED:
-    case PipelineRunStatus.STARTED:
-    case PipelineRunStatus.STARTING:
+    case RunStatus.MANAGED:
+    case RunStatus.QUEUED:
+    case RunStatus.NOT_STARTED:
+    case RunStatus.STARTED:
+    case RunStatus.STARTING:
       return 'Pending';
     default:
       return assertUnreachable(partition.runStatus);
@@ -48,10 +48,11 @@ export const SchedulePartitionStatus: React.FC<{
   repoAddress: RepoAddress;
   schedule: ScheduleFragment;
 }> = React.memo(({repoAddress, schedule}) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
-  const {name: scheduleName, mode, partitionSet, pipelineName} = schedule;
+  const repo = useRepository(repoAddress);
+  const {name: scheduleName, partitionSet, pipelineName} = schedule;
 
   const partitionSetName = partitionSet?.name;
+  const isJob = isThisThingAJob(repo, pipelineName);
 
   const partitionPath = React.useMemo(() => {
     const query = partitionSetName
@@ -62,10 +63,8 @@ export const SchedulePartitionStatus: React.FC<{
           {addQueryPrefix: true},
         )
       : '';
-    return `/${
-      flagPipelineModeTuples ? 'jobs' : 'pipelines'
-    }/${pipelineName}:${mode}/partitions${query}`;
-  }, [flagPipelineModeTuples, pipelineName, mode, partitionSetName]);
+    return `/${isJob ? 'jobs' : 'pipelines'}/${pipelineName}/partitions${query}`;
+  }, [partitionSetName, isJob, pipelineName]);
 
   const partitionURL = workspacePathFromAddress(repoAddress, partitionPath);
 
@@ -86,7 +85,7 @@ export const SchedulePartitionStatus: React.FC<{
 
   const loadable = () => {
     if (loading) {
-      return <Caption style={{color: Colors.GRAY3}}>Loading…</Caption>;
+      return <Caption style={{color: ColorsWIP.Gray400}}>Loading…</Caption>;
     }
 
     if (!data) {
@@ -107,7 +106,7 @@ export const SchedulePartitionStatus: React.FC<{
       );
     }
 
-    return <Caption style={{color: Colors.RED1}}>Partition set not found!</Caption>;
+    return <Caption style={{color: ColorsWIP.Red700}}>Partition set not found!</Caption>;
   };
 
   return (
@@ -125,7 +124,7 @@ const RetrievedSchedulePartitionStatus: React.FC<{
   const {partitionSet} = schedule;
 
   if (!partitionSet || partitionSet.partitionStatusesOrError.__typename !== 'PartitionStatuses') {
-    return <span style={{color: Colors.GRAY4}}>None</span>;
+    return <span style={{color: ColorsWIP.Gray300}}>None</span>;
   }
 
   const partitions = partitionSet.partitionStatusesOrError.results;
@@ -149,7 +148,7 @@ const RetrievedSchedulePartitionStatus: React.FC<{
                 {status === 'Failed' || status === 'Missing' ? (
                   <Link
                     to={`${partitionURL}?showFailuresAndGapsOnly=true`}
-                    style={{color: Colors.DARK_GRAY1}}
+                    style={{color: ColorsWIP.Gray900}}
                   >
                     {partitionsByType[status].length}
                   </Link>

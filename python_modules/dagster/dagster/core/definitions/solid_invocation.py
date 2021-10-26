@@ -67,16 +67,18 @@ def _check_invocation_requirements(
 
     # Check resource requirements
     if solid_def.required_resource_keys and context is None:
+        node_label = solid_def.node_type_str  # string "solid" for solids, "op" for ops
         raise DagsterInvalidInvocationError(
-            f'Solid "{solid_def.name}" has required resources, but no context was provided. Use the'
-            "`build_solid_context` function to construct a context with the required "
+            f'{node_label} "{solid_def.name}" has required resources, but no context was provided. Use the'
+            f"`build_{node_label}_context` function to construct a context with the required "
             "resources."
         )
 
     # Check config requirements
     if not context and solid_def.config_schema.as_field().is_required:
+        node_label = solid_def.node_type_str  # string "solid" for solids, "op" for ops
         raise DagsterInvalidInvocationError(
-            f'Solid "{solid_def.name}" has required config schema, but no context was provided. '
+            f'{node_label} "{solid_def.name}" has required config schema, but no context was provided. '
             "Use the `build_solid_context` function to create a context with config."
         )
 
@@ -93,9 +95,11 @@ def _resolve_inputs(
     # Check kwargs for nothing inputs, and error if someone provided one.
     for input_def in nothing_input_defs:
         if input_def.name in kwargs:
+            node_label = solid_def.node_type_str  # string "solid" for solids, "op" for ops
+
             raise DagsterInvalidInvocationError(
                 f"Attempted to provide value for nothing input '{input_def.name}'. Nothing "
-                "dependencies are ignored when directly invoking solids."
+                f"dependencies are ignored when directly invoking {node_label}s."
             )
 
     # Discard nothing dependencies - we ignore them during invocation.
@@ -118,8 +122,9 @@ def _resolve_inputs(
                 "but no context parameter was defined for the solid."
             )
 
+        node_label = solid_def.node_type_str
         raise DagsterInvalidInvocationError(
-            f"Too many input arguments were provided for solid '{context.alias}'. {suggestion}"
+            f"Too many input arguments were provided for {node_label} '{context.alias}'. {suggestion}"
         )
 
     positional_inputs = cast("DecoratedSolidFunction", solid_def.compute_fn).positional_inputs()
@@ -142,6 +147,8 @@ def _resolve_inputs(
         )
 
     # Type check inputs
+    op_label = context.describe_op()
+
     for input_name, val in input_dict.items():
 
         input_def = input_defs_by_name[input_name]
@@ -150,7 +157,7 @@ def _resolve_inputs(
         if not type_check.success:
             raise DagsterTypeCheckDidNotPass(
                 description=(
-                    f'Type check failed for solid input "{input_def.name}" - '
+                    f'Type check failed for {op_label} input "{input_def.name}" - '
                     f'expected type "{dagster_type.display_name}". '
                     f"Description: {type_check.description}"
                 ),
@@ -184,7 +191,7 @@ def _type_check_output_wrapper(
                 else:
                     if not isinstance(event, (Output, DynamicOutput)):
                         raise DagsterInvariantViolationError(
-                            "When yielding outputs from a solid generator, they should be wrapped in an `Output` object."
+                            f"When yielding outputs from a {solid_def.node_type_str} generator, they should be wrapped in an `Output` object."
                         )
                     else:
                         output_def = output_defs[event.output_name]
@@ -193,14 +200,14 @@ def _type_check_output_wrapper(
                             output_def, DynamicOutputDefinition
                         ):
                             raise DagsterInvariantViolationError(
-                                f"Invocation of solid '{context.alias}' yielded an output '{output_def.name}' multiple times."
+                                f"Invocation of {solid_def.node_type_str} '{context.alias}' yielded an output '{output_def.name}' multiple times."
                             )
                         outputs_seen.add(output_def.name)
                     yield event
             for output_def in solid_def.output_defs:
                 if output_def.name not in outputs_seen and output_def.is_required:
                     raise DagsterInvariantViolationError(
-                        f"Invocation of solid '{context.alias}' did not return an output for non-optional output '{output_def.name}'"
+                        f"Invocation of {solid_def.node_type_str} '{context.alias}' did not return an output for non-optional output '{output_def.name}'"
                     )
 
         return to_gen(result)
@@ -225,7 +232,7 @@ def _type_check_output_wrapper(
                 else:
                     if not isinstance(event, (Output, DynamicOutput)):
                         raise DagsterInvariantViolationError(
-                            "When yielding outputs from a solid generator, they should be wrapped in an `Output` object."
+                            f"When yielding outputs from a {solid_def.node_type_str} generator, they should be wrapped in an `Output` object."
                         )
                     else:
                         output_def = output_defs[event.output_name]
@@ -234,14 +241,14 @@ def _type_check_output_wrapper(
                             output_def, DynamicOutputDefinition
                         ):
                             raise DagsterInvariantViolationError(
-                                f"Invocation of solid '{context.alias}' yielded an output '{output_def.name}' multiple times."
+                                f"Invocation of {solid_def.node_type_str} '{context.alias}' yielded an output '{output_def.name}' multiple times."
                             )
                         outputs_seen.add(output_def.name)
                     yield output
             for output_def in solid_def.output_defs:
                 if output_def.name not in outputs_seen and output_def.is_required:
                     raise DagsterInvariantViolationError(
-                        f"Invocation of solid '{context.alias}' did not return an output for non-optional output '{output_def.name}'"
+                        f"Invocation of {solid_def.node_type_str} '{context.alias}' did not return an output for non-optional output '{output_def.name}'"
                     )
 
         return type_check_gen(result)
@@ -258,15 +265,15 @@ def _type_check_function_output(
     if isinstance(result, (AssetMaterialization, Materialization, ExpectationResult)):
         raise DagsterInvariantViolationError(
             (
-                f"Error in solid '{solid_def.name}'': If you are returning an AssetMaterialization "
+                f"Error in {solid_def.node_type_str} '{solid_def.name}'': If you are returning an AssetMaterialization "
                 "or an ExpectationResult from solid you must yield them to avoid "
                 "ambiguity with an implied result from returning a value."
             )
         )
     if isinstance(result, DynamicOutput):
         raise DagsterInvariantViolationError(
-            f"Error in solid '{solid_def.name}': Attempted to return a DynamicOutput from solid. "
-            "DynamicOutputs are only supported using yield syntax."
+            f"Error in {solid_def.node_type_str} '{solid_def.name}': Attempted to return a DynamicOutput from {solid_def.node_type_str}. "
+            "DynamicOuts are only supported using yield syntax."
         )
     if (
         not isinstance(result, Output)
@@ -279,14 +286,14 @@ def _type_check_function_output(
 
     if len(solid_def.output_defs) > 1 and not isinstance(result, (Output, DynamicOutput)):
         raise DagsterInvariantViolationError(
-            "Multiple output definitions but no Output wrapper provided is ambiguous."
+            "Multiple outputs but no Output wrapper provided is ambiguous."
         )
     received_output = None
     output_defs = {output_def.name: output_def for output_def in solid_def.output_defs}
     if isinstance(result, (Output, DynamicOutput)):
         if result.output_name not in output_defs:
             raise DagsterInvariantViolationError(
-                f'Invocation of solid "{solid_def.name}" returned an output "{result.output_name}" '
+                f'Invocation of {solid_def.node_type_str} "{solid_def.name}" returned an output "{result.output_name}" '
                 "that does not exist. The available outputs are "
                 f"{[output_def.name for output_def in solid_def.output_defs]}"
             )
@@ -300,7 +307,7 @@ def _type_check_function_output(
     for output_def in solid_def.output_defs:
         if output_def.is_required and not output_def.name == received_output:
             raise DagsterInvariantViolationError(
-                f"Invocation of solid '{solid_def.name}' did not return an output for non-optional "
+                f"Invocation of {solid_def.node_type_str} '{solid_def.name}' did not return an output for non-optional "
                 f"output '{output_def.name}'."
             )
     return result
@@ -319,13 +326,15 @@ def _type_check_output(
     """
     from ..execution.plan.execute_step import do_type_check
 
+    op_label = context.describe_op()
+
     if isinstance(output, (Output, DynamicOutput)):
         dagster_type = output_def.dagster_type
         type_check = do_type_check(context.for_type(dagster_type), dagster_type, output.value)
         if not type_check.success:
             raise DagsterTypeCheckDidNotPass(
                 description=(
-                    f'Type check failed for solid output "{output.output_name}" - '
+                    f'Type check failed for {op_label} output "{output.output_name}" - '
                     f'expected type "{dagster_type.display_name}". '
                     f"Description: {type_check.description}"
                 ),
@@ -339,7 +348,7 @@ def _type_check_output(
         if not type_check.success:
             raise DagsterTypeCheckDidNotPass(
                 description=(
-                    f'Type check failed for solid output "{output_def.name}" - '
+                    f'Type check failed for {op_label} output "{output_def.name}" - '
                     f'expected type "{dagster_type.display_name}". '
                     f"Description: {type_check.description}"
                 ),

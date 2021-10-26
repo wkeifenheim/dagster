@@ -4,7 +4,7 @@
 // @generated
 // This file was automatically generated and should not be edited.
 
-import { RepositorySelector, InstigationType, InstigationStatus, PipelineRunStatus, InstigationTickStatus } from "./../../types/globalTypes";
+import { RepositorySelector, InstigationType, InstigationStatus, RunStatus, InstigationTickStatus } from "./../../types/globalTypes";
 
 // ====================================================
 // GraphQL query operation: SchedulesRootQuery
@@ -53,10 +53,10 @@ export interface SchedulesRootQuery_repositoryOrError_Repository_schedules_sched
 export type SchedulesRootQuery_repositoryOrError_Repository_schedules_scheduleState_typeSpecificData = SchedulesRootQuery_repositoryOrError_Repository_schedules_scheduleState_typeSpecificData_SensorData | SchedulesRootQuery_repositoryOrError_Repository_schedules_scheduleState_typeSpecificData_ScheduleData;
 
 export interface SchedulesRootQuery_repositoryOrError_Repository_schedules_scheduleState_runs {
-  __typename: "PipelineRun";
+  __typename: "Run";
   id: string;
   runId: string;
-  status: PipelineRunStatus;
+  status: RunStatus;
 }
 
 export interface SchedulesRootQuery_repositoryOrError_Repository_schedules_scheduleState_ticks_error_cause {
@@ -150,31 +150,6 @@ export interface SchedulesRootQuery_repositoryOrError_PythonError {
 
 export type SchedulesRootQuery_repositoryOrError = SchedulesRootQuery_repositoryOrError_RepositoryNotFoundError | SchedulesRootQuery_repositoryOrError_Repository | SchedulesRootQuery_repositoryOrError_PythonError;
 
-export interface SchedulesRootQuery_scheduler_SchedulerNotDefinedError {
-  __typename: "SchedulerNotDefinedError";
-  message: string;
-}
-
-export interface SchedulesRootQuery_scheduler_Scheduler {
-  __typename: "Scheduler";
-  schedulerClass: string | null;
-}
-
-export interface SchedulesRootQuery_scheduler_PythonError_cause {
-  __typename: "PythonError";
-  message: string;
-  stack: string[];
-}
-
-export interface SchedulesRootQuery_scheduler_PythonError {
-  __typename: "PythonError";
-  message: string;
-  stack: string[];
-  cause: SchedulesRootQuery_scheduler_PythonError_cause | null;
-}
-
-export type SchedulesRootQuery_scheduler = SchedulesRootQuery_scheduler_SchedulerNotDefinedError | SchedulesRootQuery_scheduler_Scheduler | SchedulesRootQuery_scheduler_PythonError;
-
 export interface SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_repositoryOrigin_repositoryLocationMetadata {
   __typename: "RepositoryMetadata";
   key: string;
@@ -202,10 +177,10 @@ export interface SchedulesRootQuery_unloadableInstigationStatesOrError_Instigati
 export type SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_typeSpecificData = SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_typeSpecificData_SensorData | SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_typeSpecificData_ScheduleData;
 
 export interface SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_runs {
-  __typename: "PipelineRun";
+  __typename: "Run";
   id: string;
   runId: string;
-  status: PipelineRunStatus;
+  status: RunStatus;
 }
 
 export interface SchedulesRootQuery_unloadableInstigationStatesOrError_InstigationStates_results_ticks_error_cause {
@@ -300,7 +275,6 @@ export interface SchedulesRootQuery_instance {
 
 export interface SchedulesRootQuery {
   repositoryOrError: SchedulesRootQuery_repositoryOrError;
-  scheduler: SchedulesRootQuery_scheduler;
   unloadableInstigationStatesOrError: SchedulesRootQuery_unloadableInstigationStatesOrError;
   instance: SchedulesRootQuery_instance;
 }

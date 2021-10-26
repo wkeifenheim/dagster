@@ -18,6 +18,8 @@ class CeleryWorkerQueue(BaseModel):
     name: str
     labels: Optional[kubernetes.Labels]
     nodeSelector: Optional[kubernetes.NodeSelector]
+    configSource: Optional[dict]
+    additionalCeleryArgs: Optional[List[str]]
 
     class Config:
         extra = Extra.forbid
@@ -53,6 +55,8 @@ class K8sRunLauncherConfig(BaseModel):
     envConfigMaps: List[kubernetes.ConfigMapEnvSource]
     envSecrets: List[kubernetes.SecretEnvSource]
     envVars: List[str]
+    volumeMounts: List[kubernetes.VolumeMount]
+    volumes: List[kubernetes.Volume]
 
     class Config:
         extra = Extra.forbid

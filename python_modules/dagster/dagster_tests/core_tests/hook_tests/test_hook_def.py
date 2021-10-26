@@ -149,7 +149,7 @@ def test_hook_resource_error():
 
     with pytest.raises(
         DagsterInvalidDefinitionError,
-        match='Resource key "resource_b" is required by hook "a_hook"',
+        match="resource key 'resource_b' is required by hook 'a_hook'",
     ):
         PipelineDefinition(
             solid_defs=[a_solid],
@@ -469,13 +469,42 @@ def test_hook_graph_job_op():
 
 
 def test_hook_context_op_solid_provided():
-    @success_hook()
-    def hook_one(context):
-        pass
-
     @op
     def hook_op(_):
         pass
 
     with pytest.raises(check.CheckError):
         build_hook_context(op=hook_op, solid=hook_op)
+
+
+def test_hook_decorator_graph_job_op():
+    called_hook_to_solids = defaultdict(list)
+
+    @success_hook
+    def a_success_hook(context):
+        called_hook_to_solids[context.hook_def.name].append(context.solid.name)
+
+    @op
+    def my_op(_):
+        pass
+
+    @graph
+    def a_graph():
+        my_op()
+
+    assert a_graph.to_job(hooks={a_success_hook}).execute_in_process().success
+    assert called_hook_to_solids["a_success_hook"][0] == "my_op"
+
+
+def test_job_hook_context_job_name():
+    my_job_name = "my_test_job_name"
+
+    @success_hook
+    def a_success_hook(context):
+        assert context.job_name == my_job_name
+
+    @graph
+    def a_graph():
+        pass
+
+    assert a_graph.to_job(name=my_job_name, hooks={a_success_hook}).execute_in_process().success

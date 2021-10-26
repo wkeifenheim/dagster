@@ -1,12 +1,15 @@
 import {gql} from '@apollo/client';
-import {Icon, Popover} from '@blueprintjs/core';
 import * as React from 'react';
 import * as yaml from 'yaml';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {PythonErrorInfo, PYTHON_ERROR_FRAGMENT} from '../app/PythonErrorInfo';
 import {Timestamp} from '../app/time/Timestamp';
-import {ExecutionParams, PipelineRunStatus} from '../types/globalTypes';
+import {ExecutionParams, RunStatus} from '../types/globalTypes';
+import {ColorsWIP} from '../ui/Colors';
+import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
+import {Popover} from '../ui/Popover';
 
 import {DagsterTag} from './RunTag';
 import {StepSelection} from './StepSelection';
@@ -29,6 +32,7 @@ export function handleLaunchResult(
   basePath: string,
   pipelineName: string,
   result: void | {data?: LaunchPipelineExecution | LaunchPipelineReexecution | null},
+  openInTab?: boolean,
 ) {
   const obj =
     result && result.data && 'launchPipelineExecution' in result.data
@@ -42,8 +46,13 @@ export function handleLaunchResult(
     return;
   }
 
-  if (obj.__typename === 'LaunchPipelineRunSuccess') {
-    window.location.href = `${basePath}/instance/runs/${obj.run.runId}`;
+  if (obj.__typename === 'LaunchRunSuccess') {
+    const url = `${basePath}/instance/runs/${obj.run.runId}`;
+    if (openInTab) {
+      window.open(url, '_blank');
+    } else {
+      window.location.href = url;
+    }
   } else if (obj.__typename === 'PythonError') {
     showCustomAlert({
       title: 'Error',
@@ -141,7 +150,7 @@ export const LAUNCH_PIPELINE_EXECUTION_MUTATION = gql`
   mutation LaunchPipelineExecution($executionParams: ExecutionParams!) {
     launchPipelineExecution(executionParams: $executionParams) {
       __typename
-      ... on LaunchPipelineRunSuccess {
+      ... on LaunchRunSuccess {
         run {
           id
           runId
@@ -151,7 +160,7 @@ export const LAUNCH_PIPELINE_EXECUTION_MUTATION = gql`
       ... on PipelineNotFoundError {
         message
       }
-      ... on PipelineConfigValidationInvalid {
+      ... on RunConfigValidationInvalid {
         errors {
           message
         }
@@ -174,7 +183,7 @@ export const DELETE_MUTATION = gql`
       ... on UnauthorizedError {
         message
       }
-      ... on PipelineRunNotFoundError {
+      ... on RunNotFoundError {
         message
       }
     }
@@ -182,16 +191,16 @@ export const DELETE_MUTATION = gql`
 `;
 
 export const TERMINATE_MUTATION = gql`
-  mutation Terminate($runId: String!, $terminatePolicy: TerminatePipelinePolicy) {
+  mutation Terminate($runId: String!, $terminatePolicy: TerminateRunPolicy) {
     terminatePipelineExecution(runId: $runId, terminatePolicy: $terminatePolicy) {
       __typename
-      ... on TerminatePipelineExecutionFailure {
+      ... on TerminateRunFailure {
         message
       }
-      ... on PipelineRunNotFoundError {
+      ... on RunNotFoundError {
         message
       }
-      ... on TerminatePipelineExecutionSuccess {
+      ... on TerminateRunSuccess {
         run {
           id
           runId
@@ -212,7 +221,7 @@ export const LAUNCH_PIPELINE_REEXECUTION_MUTATION = gql`
   mutation LaunchPipelineReexecution($executionParams: ExecutionParams!) {
     launchPipelineReexecution(executionParams: $executionParams) {
       __typename
-      ... on LaunchPipelineRunSuccess {
+      ... on LaunchRunSuccess {
         run {
           id
           runId
@@ -224,7 +233,7 @@ export const LAUNCH_PIPELINE_REEXECUTION_MUTATION = gql`
       ... on PipelineNotFoundError {
         message
       }
-      ... on PipelineConfigValidationInvalid {
+      ... on RunConfigValidationInvalid {
         errors {
           message
         }
@@ -242,14 +251,15 @@ interface RunTimeProps {
 }
 
 export const RunTime: React.FC<RunTimeProps> = React.memo(({run}) => {
-  const {stats, status} = run;
+  const {stats} = run;
 
-  if (stats.__typename !== 'PipelineRunStatsSnapshot') {
+  if (stats.__typename !== 'RunStatsSnapshot') {
     return (
       <Popover content={<PythonErrorInfo error={stats} />}>
-        <div>
-          <Icon icon="error" /> Failed to load times
-        </div>
+        <Group direction="row" spacing={4} alignItems="center">
+          <IconWIP name="error" color={ColorsWIP.Red500} />
+          <div>Failed to load times</div>
+        </Group>
       </Popover>
     );
   }
@@ -265,12 +275,12 @@ export const RunTime: React.FC<RunTimeProps> = React.memo(({run}) => {
       return <Timestamp timestamp={{unix: stats.enqueuedTime}} />;
     }
 
-    switch (status) {
-      case PipelineRunStatus.FAILURE:
+    switch (run.status) {
+      case RunStatus.FAILURE:
         return 'Failed to start';
-      case PipelineRunStatus.CANCELED:
+      case RunStatus.CANCELED:
         return 'Canceled';
-      case PipelineRunStatus.CANCELING:
+      case RunStatus.CANCELING:
         return 'Canceling…';
       default:
         return 'Starting…';
@@ -281,12 +291,13 @@ export const RunTime: React.FC<RunTimeProps> = React.memo(({run}) => {
 });
 
 export const RunElapsed: React.FC<RunTimeProps> = React.memo(({run}) => {
-  if (run.stats.__typename !== 'PipelineRunStatsSnapshot') {
+  if (run.stats.__typename !== 'RunStatsSnapshot') {
     return (
       <Popover content={<PythonErrorInfo error={run.stats} />}>
-        <div>
-          <Icon icon="error" /> Failed to load times
-        </div>
+        <Group direction="row" spacing={4} alignItems="center">
+          <IconWIP name="error" color={ColorsWIP.Red500} />
+          <div>Failed to load times</div>
+        </Group>
       </Popover>
     );
   }
@@ -295,11 +306,11 @@ export const RunElapsed: React.FC<RunTimeProps> = React.memo(({run}) => {
 });
 
 export const RUN_TIME_FRAGMENT = gql`
-  fragment RunTimeFragment on PipelineRun {
+  fragment RunTimeFragment on Run {
     id
     status
     stats {
-      ... on PipelineRunStatsSnapshot {
+      ... on RunStatsSnapshot {
         id
         enqueuedTime
         launchTime

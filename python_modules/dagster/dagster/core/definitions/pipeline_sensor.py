@@ -21,6 +21,7 @@ from dagster.serdes import (
 from dagster.serdes.errors import DeserializationError
 from dagster.serdes.serdes import register_serdes_tuple_fallbacks
 from dagster.seven import JSONDecodeError
+from dagster.utils import utc_datetime_from_timestamp
 from dagster.utils.error import serializable_error_info_from_exc_info
 
 
@@ -284,8 +285,13 @@ class RunStatusSensorDefinition(SensorDefinition):
 
         from dagster.core.storage.event_log.base import RunShardedEventsCursor, EventRecordsFilter
 
+        check.str_param(name, "name")
         check.inst_param(pipeline_run_status, "pipeline_run_status", PipelineRunStatus)
+        check.callable_param(run_status_sensor_fn, "run_status_sensor_fn")
         check.opt_list_param(pipeline_selection, "pipeline_selection", str)
+        check.opt_int_param(minimum_interval_seconds, "minimum_interval_seconds")
+        check.opt_str_param(description, "description")
+        check.opt_list_param(job_selection, "job_selection", (PipelineDefinition, GraphDefinition))
 
         def _wrapped_fn(context: SensorEvaluationContext):
             # initiate the cursor to (most recent event id, current timestamp) when:
@@ -335,7 +341,22 @@ class RunStatusSensorDefinition(SensorDefinition):
                 run_records = context.instance.get_run_records(
                     filters=PipelineRunsFilter(run_ids=[event_log_entry.run_id])
                 )
-                check.invariant(len(run_records) == 1)
+
+                # skip if we couldn't find the right run
+                if len(run_records) != 1:
+                    # bc we couldn't find the run, we use the event timestamp as the approximate
+                    # run update timestamp
+                    approximate_update_timestamp = utc_datetime_from_timestamp(
+                        event_log_entry.timestamp
+                    )
+                    context.update_cursor(
+                        RunStatusSensorCursor(
+                            record_id=storage_id,
+                            update_timestamp=approximate_update_timestamp.isoformat(),
+                        ).to_json()
+                    )
+                    continue
+
                 pipeline_run = run_records[0].pipeline_run
                 update_timestamp = run_records[0].update_timestamp
 

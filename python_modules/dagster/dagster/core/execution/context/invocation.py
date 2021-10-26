@@ -7,6 +7,7 @@ from dagster.core.definitions.composition import PendingNodeInvocation
 from dagster.core.definitions.dependency import Node, NodeHandle
 from dagster.core.definitions.hook import HookDefinition
 from dagster.core.definitions.mode import ModeDefinition
+from dagster.core.definitions.op_def import OpDefinition
 from dagster.core.definitions.pipeline import PipelineDefinition
 from dagster.core.definitions.resource import IContainsGenerator, Resources, ScopedResourcesBuilder
 from dagster.core.definitions.solid import SolidDefinition
@@ -44,6 +45,7 @@ class UnboundSolidExecutionContext(SolidExecutionContext):
         self,
         solid_config: Any,
         resources_dict: Optional[Dict[str, Any]],
+        resources_config: Dict[str, Any],
         instance: Optional[DagsterInstance],
     ):  # pylint: disable=super-init-not-called
         from dagster.core.execution.context_creation_pipeline import initialize_console_manager
@@ -60,9 +62,13 @@ class UnboundSolidExecutionContext(SolidExecutionContext):
         # so ignore lint error
         self._instance = self._instance_cm.__enter__()  # pylint: disable=no-member
 
+        self._resources_config = resources_config
         # Open resource context manager
+        self._resources_contain_cm = False
         self._resources_cm = build_resources(
-            check.opt_dict_param(resources_dict, "resources_dict", key_type=str), instance
+            resources=check.opt_dict_param(resources_dict, "resources_dict", key_type=str),
+            instance=instance,
+            resource_config=resources_config,
         )
         self._resources = self._resources_cm.__enter__()  # pylint: disable=no-member
         self._resources_contain_cm = isinstance(self._resources, IContainsGenerator)
@@ -195,6 +201,7 @@ class UnboundSolidExecutionContext(SolidExecutionContext):
             solid_def=solid_def,
             solid_config=solid_config,
             resources=self.resources,
+            resources_config=self._resources_config,
             instance=self.instance,
             log_manager=self.log,
             pdb=self.pdb,
@@ -219,7 +226,7 @@ def _validate_resource_requirements(resources: "Resources", solid_def: SolidDefi
     for resource_key in required_resource_keys:
         if resource_key not in resources_dict:
             raise DagsterInvalidInvocationError(
-                f'Solid "{solid_def.name}" requires resource "{resource_key}", but no resource '
+                f'{solid_def.node_type_str} "{solid_def.name}" requires resource "{resource_key}", but no resource '
                 "with that key was found on the context."
             )
 
@@ -236,7 +243,7 @@ def _resolve_bound_config(solid_config: Any, solid_def: SolidDefinition) -> Any:
     )
     if not config_evr.success:
         raise DagsterInvalidConfigError(
-            "Error in config for solid ",
+            f"Error in config for {solid_def.node_type_str} ",
             config_evr.errors,
             solid_config,
         )
@@ -244,7 +251,9 @@ def _resolve_bound_config(solid_config: Any, solid_def: SolidDefinition) -> Any:
     mapped_config_evr = solid_def.apply_config_mapping({"config": validated_config})
     if not mapped_config_evr.success:
         raise DagsterInvalidConfigError(
-            "Error in config for solid ", mapped_config_evr.errors, solid_config
+            f"Error in config for {solid_def.node_type_str} ",
+            mapped_config_evr.errors,
+            solid_config,
         )
     validated_config = mapped_config_evr.value.get("config")
     return validated_config
@@ -262,6 +271,7 @@ class BoundSolidExecutionContext(SolidExecutionContext):
         solid_def: SolidDefinition,
         solid_config: Any,
         resources: "Resources",
+        resources_config: Dict[str, Any],
         instance: DagsterInstance,
         log_manager: DagsterLogManager,
         pdb: Optional[ForkedPdb],
@@ -278,6 +288,7 @@ class BoundSolidExecutionContext(SolidExecutionContext):
         self._tags = merge_dicts(self._solid_def.tags, tags) if tags else self._solid_def.tags
         self._hook_defs = hook_defs
         self._alias = alias if alias else self._solid_def.name
+        self._resources_config = resources_config
 
     @property
     def solid_config(self) -> Any:
@@ -324,7 +335,11 @@ class BoundSolidExecutionContext(SolidExecutionContext):
 
     @property
     def run_config(self) -> dict:
-        raise DagsterInvalidPropertyError(_property_msg("run_config", "property"))
+        run_config = {}
+        if self._solid_config:
+            run_config["solids"] = {self._solid_def.name: {"config": self._solid_config}}
+        run_config["resources"] = self._resources_config
+        return run_config
 
     @property
     def pipeline_def(self) -> PipelineDefinition:
@@ -377,11 +392,19 @@ class BoundSolidExecutionContext(SolidExecutionContext):
     def get_mapping_key(self) -> Optional[str]:
         return None
 
+    def describe_op(self):
+        if isinstance(self.solid_def, OpDefinition):
+            return f'op "{self.solid_def.name}"'
+
+        return f'solid "{self.solid_def.name}"'
+
 
 def build_op_context(
     resources: Optional[Dict[str, Any]] = None,
-    config: Optional[Any] = None,
+    op_config: Any = None,
+    resources_config: Optional[Dict[str, Any]] = None,
     instance: Optional[DagsterInstance] = None,
+    config: Any = None,
 ) -> SolidExecutionContext:
     """Builds op execution context from provided parameters.
 
@@ -408,13 +431,27 @@ def build_op_context(
                 op_to_invoke(context)
     """
 
-    return build_solid_context(resources=resources, config=config, instance=instance)
+    if op_config and config:
+        raise DagsterInvalidInvocationError(
+            "Attempted to invoke ``build_op_context`` with both ``op_config``, and its "
+            "legacy version, ``config``. Please provide one or the other."
+        )
+
+    op_config = op_config if op_config else config
+    return build_solid_context(
+        resources=resources,
+        resources_config=resources_config,
+        solid_config=op_config,
+        instance=instance,
+    )
 
 
 def build_solid_context(
     resources: Optional[Dict[str, Any]] = None,
-    config: Optional[Any] = None,
+    solid_config: Any = None,
+    resources_config: Optional[Dict[str, Any]] = None,
     instance: Optional[DagsterInstance] = None,
+    config: Any = None,
 ) -> UnboundSolidExecutionContext:
     """Builds solid execution context from provided parameters.
 
@@ -426,7 +463,11 @@ def build_solid_context(
     Args:
         resources (Optional[Dict[str, Any]]): The resources to provide to the context. These can be
             either values or resource definitions.
-        config (Optional[Any]): The solid config to provide to the context.
+        solid_config (Optional[Any]): The solid config to provide to the context. The value provided
+            here will be available as ``context.solid_config``.
+        resources_config (Optional[Dict[str, Any]]): Configuration for any resource definitions
+            provided to the resources arg. The configuration under a specific key should match the
+            resource under a specific key in the resources dictionary.
         instance (Optional[DagsterInstance]): The dagster instance configured for the context.
             Defaults to DagsterInstance.ephemeral().
 
@@ -440,8 +481,17 @@ def build_solid_context(
                 solid_to_invoke(context)
     """
 
+    if solid_config and config:
+        raise DagsterInvalidInvocationError(
+            "Attempted to invoke ``build_solid_context`` with both ``solid_config``, and its "
+            "legacy version, ``config``. Please provide one or the other."
+        )
+
+    solid_config = solid_config if solid_config else config
+
     return UnboundSolidExecutionContext(
         resources_dict=check.opt_dict_param(resources, "resources", key_type=str),
-        solid_config=config,
+        resources_config=check.opt_dict_param(resources_config, "resources_config", key_type=str),
+        solid_config=solid_config,
         instance=check.opt_inst_param(instance, "instance", DagsterInstance),
     )

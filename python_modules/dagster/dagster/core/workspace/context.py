@@ -47,6 +47,10 @@ if TYPE_CHECKING:
     )
 
 
+DAGIT_GRPC_SERVER_HEARTBEAT_TTL = 45
+DAGIT_GRPC_SERVER_STARTUP_TIMEOUT = 30
+
+
 class BaseWorkspaceRequestContext(IWorkspace):
     """
     This class is a request-scoped object that stores (1) a reference to all repository locations
@@ -63,8 +67,8 @@ class BaseWorkspaceRequestContext(IWorkspace):
     def instance(self) -> DagsterInstance:
         pass
 
-    @abstractproperty
-    def workspace_snapshot(self) -> Dict[str, WorkspaceLocationEntry]:
+    @abstractmethod
+    def get_workspace_snapshot(self) -> Dict[str, WorkspaceLocationEntry]:
         pass
 
     @abstractmethod
@@ -107,16 +111,18 @@ class BaseWorkspaceRequestContext(IWorkspace):
     def repository_locations(self) -> List[RepositoryLocation]:
         return [
             entry.repository_location
-            for entry in self.workspace_snapshot.values()
+            for entry in self.get_workspace_snapshot().values()
             if entry.repository_location
         ]
 
     @property
     def repository_location_names(self) -> List[str]:
-        return list(self.workspace_snapshot)
+        return list(self.get_workspace_snapshot())
 
     def repository_location_errors(self) -> List[SerializableErrorInfo]:
-        return [entry.load_error for entry in self.workspace_snapshot.values() if entry.load_error]
+        return [
+            entry.load_error for entry in self.get_workspace_snapshot().values() if entry.load_error
+        ]
 
     def get_repository_location(self, name: str) -> RepositoryLocation:
         location_entry = self.get_location_entry(name)
@@ -199,7 +205,7 @@ class BaseWorkspaceRequestContext(IWorkspace):
         self, repository_handle: RepositoryHandle, partition_set_name: str, partition_name: str
     ) -> Union["ExternalPartitionConfigData", "ExternalPartitionExecutionErrorData"]:
         return self.get_repository_location(
-            repository_handle.repository_location.name
+            repository_handle.location_name
         ).get_external_partition_config(
             repository_handle=repository_handle,
             partition_set_name=partition_set_name,
@@ -210,7 +216,7 @@ class BaseWorkspaceRequestContext(IWorkspace):
         self, repository_handle: RepositoryHandle, partition_set_name: str, partition_name: str
     ) -> Union["ExternalPartitionTagsData", "ExternalPartitionExecutionErrorData"]:
         return self.get_repository_location(
-            repository_handle.repository_location.name
+            repository_handle.location_name
         ).get_external_partition_tags(
             repository_handle=repository_handle,
             partition_set_name=partition_set_name,
@@ -221,7 +227,7 @@ class BaseWorkspaceRequestContext(IWorkspace):
         self, repository_handle: RepositoryHandle, partition_set_name: str
     ) -> Union["ExternalPartitionNamesData", "ExternalPartitionExecutionErrorData"]:
         return self.get_repository_location(
-            repository_handle.repository_location.name
+            repository_handle.location_name
         ).get_external_partition_names(repository_handle, partition_set_name)
 
     def get_external_partition_set_execution_param_data(
@@ -231,7 +237,7 @@ class BaseWorkspaceRequestContext(IWorkspace):
         partition_names: List[str],
     ) -> Union["ExternalPartitionSetExecutionParamData", "ExternalPartitionExecutionErrorData"]:
         return self.get_repository_location(
-            repository_handle.repository_location.name
+            repository_handle.location_name
         ).get_external_partition_set_execution_param_data(
             repository_handle=repository_handle,
             partition_set_name=partition_set_name,
@@ -262,8 +268,7 @@ class WorkspaceRequestContext(BaseWorkspaceRequestContext):
     def instance(self) -> DagsterInstance:
         return self._instance
 
-    @property
-    def workspace_snapshot(self) -> Dict[str, WorkspaceLocationEntry]:
+    def get_workspace_snapshot(self) -> Dict[str, WorkspaceLocationEntry]:
         return self._workspace_snapshot
 
     def get_location_entry(self, name) -> Optional[WorkspaceLocationEntry]:
@@ -333,6 +338,12 @@ class IWorkspaceProcessContext(ABC):
     def instance(self):
         pass
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        pass
+
 
 class WorkspaceProcessContext(IWorkspaceProcessContext):
     """
@@ -392,7 +403,11 @@ class WorkspaceProcessContext(IWorkspaceProcessContext):
             )
         else:
             self._grpc_server_registry = self._stack.enter_context(
-                ProcessGrpcServerRegistry(reload_interval=0, heartbeat_ttl=30)
+                ProcessGrpcServerRegistry(
+                    reload_interval=0,
+                    heartbeat_ttl=DAGIT_GRPC_SERVER_HEARTBEAT_TTL,
+                    startup_timeout=DAGIT_GRPC_SERVER_STARTUP_TIMEOUT,
+                )
             )
 
         self._location_entry_dict: Dict[str, WorkspaceLocationEntry] = OrderedDict()

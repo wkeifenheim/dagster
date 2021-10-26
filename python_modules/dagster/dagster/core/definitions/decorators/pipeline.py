@@ -2,6 +2,7 @@ from functools import update_wrapper
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from dagster import check
+from dagster.core.decorator_utils import format_docstring_for_description
 from dagster.core.definitions.policy import RetryPolicy
 from dagster.utils.backcompat import experimental_arg_warning
 
@@ -57,7 +58,14 @@ class _Pipeline:
         if not self.name:
             self.name = fn.__name__
 
-        from dagster.core.definitions.decorators.composite_solid import do_composition
+        from dagster.core.definitions.decorators.composite_solid import (
+            do_composition,
+            get_validated_config_mapping,
+        )
+
+        config_mapping = get_validated_config_mapping(
+            self.name, self.config_schema, self.config_fn, decorator_name="pipeline"
+        )
 
         (
             input_mappings,
@@ -72,8 +80,7 @@ class _Pipeline:
             fn,
             self.input_defs,
             self.output_defs,
-            self.config_schema,
-            self.config_fn,
+            config_mapping,
             ignore_output_from_composition_fn=not self.did_pass_outputs,
         )
 
@@ -87,11 +94,11 @@ class _Pipeline:
                 node_defs=solid_defs,
                 input_mappings=input_mappings,
                 output_mappings=output_mappings,
-                config_mapping=config_mapping,
+                config=config_mapping,
                 positional_inputs=positional_inputs,
             ),
             tags=self.tags,
-            description=self.description or fn.__doc__,
+            description=self.description or format_docstring_for_description(fn),
             hook_defs=self.hook_defs,
             solid_retry_policy=self.solid_retry_policy,
             version_strategy=self.version_strategy,

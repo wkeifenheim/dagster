@@ -1,16 +1,15 @@
-import {Colors} from '@blueprintjs/core';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 
-import {useFeatureFlags} from '../app/Flags';
 import {getJSONForKey} from '../app/LocalStorage';
+import {ColorsWIP} from '../ui/Colors';
 
 const ColumnWidthsStorageKey = 'ColumnWidths';
 const ColumnWidths = Object.assign(
   {
     eventType: 140,
     solid: 150,
-    timestamp: 112,
+    timestamp: 117,
   },
   getJSONForKey(ColumnWidthsStorageKey),
 );
@@ -113,7 +112,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         >
           <div />
         </HeaderDragHandle>
-        {this.props.children}
+        <HeaderLabel>{this.props.children}</HeaderLabel>
       </HeaderContainer>
     );
   }
@@ -121,11 +120,10 @@ class Header extends React.Component<HeaderProps, HeaderState> {
 
 export const Headers = () => {
   const widths = React.useContext(ColumnWidthsContext);
-  const {flagPipelineModeTuples} = useFeatureFlags();
   return (
     <HeadersContainer>
       <Header width={widths.solid} onResize={(width) => widths.onChange({...widths, solid: width})}>
-        {flagPipelineModeTuples ? 'Op' : 'Solid'}
+        Op
       </Header>
       <Header
         width={widths.eventType}
@@ -147,10 +145,11 @@ export const Headers = () => {
 
 const HeadersContainer = styled.div`
   display: flex;
-  color: ${Colors.GRAY3};
+  color: ${ColorsWIP.Gray400};
   text-transform: uppercase;
-  font-size: 11px;
-  border-bottom: 1px solid #cbd4da;
+  font-size: 12px;
+  border-bottom: 1px solid ${ColorsWIP.KeylineGray};
+  z-index: 2;
 `;
 
 const HeaderContainer = styled.div`
@@ -158,7 +157,8 @@ const HeaderContainer = styled.div`
   position: relative;
   user-select: none;
   display: inline-block;
-  padding: 4px 8px;
+  padding: 0 12px;
+  line-height: 32px;
 `;
 
 // eslint-disable-next-line no-unexpected-multiline
@@ -177,6 +177,12 @@ const HeaderDragHandle = styled.div<{
   & > div {
     width: 1px;
     height: 100%;
-    background: ${({isDragging}) => (isDragging ? Colors.GRAY1 : Colors.LIGHT_GRAY3)};
+    background: ${({isDragging}) => (isDragging ? ColorsWIP.Gray400 : ColorsWIP.KeylineGray)};
   }
+`;
+
+const HeaderLabel = styled.div`
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 `;

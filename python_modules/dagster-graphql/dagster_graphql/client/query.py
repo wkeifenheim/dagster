@@ -207,6 +207,7 @@ subscription subscribeTest($runId: ID!) {
       messages {
         ...messageEventFragment
       }
+      hasMorePastEvents
     }
     ... on PipelineRunLogsSubscriptionFailure {
       missingRunId
@@ -248,7 +249,7 @@ mutation($executionParams: ExecutionParams!) {
       stepKey
       invalidOutputName
     }
-    ... on LaunchPipelineRunSuccess {
+    ... on LaunchRunSuccess {
       run {
         runId
         pipeline {
@@ -270,7 +271,7 @@ mutation($executionParams: ExecutionParams!) {
       preset
       message
     }
-    ... on PipelineConfigValidationInvalid {
+    ... on RunConfigValidationInvalid {
       pipelineName
       errors {
         __typename
@@ -302,7 +303,7 @@ mutation($executionParams: ExecutionParams!) {
     ... on PythonError {
       ...errorFragment
     }
-    ... on LaunchPipelineRunSuccess {
+    ... on LaunchRunSuccess {
       run {
         runId
         status
@@ -323,7 +324,7 @@ mutation($executionParams: ExecutionParams!) {
       message
       pipelineName
     }
-    ... on PipelineConfigValidationInvalid {
+    ... on RunConfigValidationInvalid {
       pipelineName
       errors {
         __typename

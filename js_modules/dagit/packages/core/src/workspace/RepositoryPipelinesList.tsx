@@ -1,9 +1,9 @@
 import {gql, useQuery} from '@apollo/client';
-import {NonIdealState} from '@blueprintjs/core';
 import * as React from 'react';
 
 import {PipelineTable, PIPELINE_TABLE_FRAGMENT} from '../pipelines/PipelineTable';
-import {Page} from '../ui/Page';
+import {Box} from '../ui/Box';
+import {NonIdealState} from '../ui/NonIdealState';
 
 import {repoAddressAsString} from './repoAddressAsString';
 import {repoAddressToSelector} from './repoAddressToSelector';
@@ -31,10 +31,11 @@ const REPOSITORY_PIPELINES_LIST_QUERY = gql`
 
 interface Props {
   repoAddress: RepoAddress;
+  display: 'jobs' | 'pipelines';
 }
 
 export const RepositoryPipelinesList: React.FC<Props> = (props) => {
-  const {repoAddress} = props;
+  const {display, repoAddress} = props;
   const repositorySelector = repoAddressToSelector(repoAddress);
 
   const {data, error, loading} = useQuery<RepositoryPipelinesListQuery>(
@@ -50,11 +51,15 @@ export const RepositoryPipelinesList: React.FC<Props> = (props) => {
     if (!repo || repo.__typename !== 'Repository') {
       return null;
     }
-    return repo.pipelines.map((pipeline) => ({
-      pipeline,
-      repoAddress,
-    }));
-  }, [repo, repoAddress]);
+    return repo.pipelines
+      .map((pipelineOrJob) => ({
+        pipelineOrJob,
+        repoAddress,
+      }))
+      .filter(({pipelineOrJob}) =>
+        display === 'jobs' ? pipelineOrJob.isJob : !pipelineOrJob.isJob,
+      );
+  }, [display, repo, repoAddress]);
 
   if (loading) {
     return null;
@@ -62,16 +67,15 @@ export const RepositoryPipelinesList: React.FC<Props> = (props) => {
 
   if (error || !pipelinesForTable) {
     return (
-      <NonIdealState
-        title="Unable to load pipelines"
-        description={`Could not load pipelines for ${repoAddressAsString(repoAddress)}`}
-      />
+      <Box padding={{vertical: 64}}>
+        <NonIdealState
+          icon="error"
+          title="Unable to load pipelines"
+          description={`Could not load pipelines for ${repoAddressAsString(repoAddress)}`}
+        />
+      </Box>
     );
   }
 
-  return (
-    <Page>
-      <PipelineTable pipelines={pipelinesForTable} showRepo={false} />
-    </Page>
-  );
+  return <PipelineTable pipelinesOrJobs={pipelinesForTable} showRepo={false} />;
 };

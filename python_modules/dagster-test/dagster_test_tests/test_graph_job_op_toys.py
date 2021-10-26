@@ -5,6 +5,7 @@ from dagster import (
     execute_pipeline,
     reconstructable,
 )
+from dagster.core.events import DagsterEventType
 from dagster.core.test_utils import instance_for_test
 from dagster.utils import file_relative_path
 from dagster.utils.temp_file import get_temp_dir
@@ -20,7 +21,7 @@ from dagster_test.graph_job_op_toys.error_monster import (
 from dagster_test.graph_job_op_toys.hammer import hammer_default_executor_job
 from dagster_test.graph_job_op_toys.log_spew import log_spew_job
 from dagster_test.graph_job_op_toys.longitudinal import IntentionalRandomFailure, longitudinal_job
-from dagster_test.graph_job_op_toys.many_events import many_events_job
+from dagster_test.graph_job_op_toys.many_events import many_events_job, many_events_subset_job
 from dagster_test.graph_job_op_toys.pyspark_assets.pyspark_assets_job import (
     dir_resources,
     pyspark_assets,
@@ -55,6 +56,18 @@ def test_many_events_job():
     assert many_events_job.execute_in_process().success
 
 
+def test_many_events_subset_job():
+    result = many_events_subset_job.execute_in_process()
+    assert result.success
+
+    executed_step_keys = [
+        evt.step_key
+        for evt in result.all_node_events
+        if evt.event_type == DagsterEventType.STEP_SUCCESS
+    ]
+    assert len(executed_step_keys) == 3
+
+
 def get_sleepy():
     return sleepy_job
 
@@ -83,14 +96,14 @@ def test_hammer_job():
 
 def test_resource_job_no_config():
     result = resource_job.execute_in_process()
-    assert result.result_for_node("one").output_values["result"] == 2
+    assert result.output_for_node("one") == 2
 
 
 def test_resource_job_with_config():
     result = resource_ops.to_job(
         config={"resources": {"R1": {"config": 2}}}, resource_defs=lots_of_resources
     ).execute_in_process()
-    assert result.result_for_node("one").output_values["result"] == 3
+    assert result.output_for_node("one") == 3
 
 
 def test_pyspark_assets_job():
@@ -198,11 +211,11 @@ def test_error_monster_type_error():
 
 def test_composition_job():
     result = composition_job.execute_in_process(
-        run_config={"solids": {"add_four": {"inputs": {"num": 3}}}},
+        run_config={"solids": {"add_four": {"inputs": {"num": {"value": 3}}}}},
     )
 
     assert result.success
-    assert result.result_for_node("div_four").output_values["result"] == 7.0 / 4.0
+    assert result.output_for_node("div_four") == 7.0 / 4.0
 
 
 def test_asset_lineage_job():

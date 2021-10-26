@@ -1,37 +1,40 @@
 import {gql} from '@apollo/client';
-import {AnchorButton, Button, Classes, Colors, Dialog} from '@blueprintjs/core';
-import {Tooltip2 as Tooltip} from '@blueprintjs/popover2';
 import * as React from 'react';
 
 import {AppContext} from '../app/AppContext';
 import {TimestampDisplay} from '../schedules/TimestampDisplay';
-import {PipelineRunStatus} from '../types/globalTypes';
+import {RunStatus} from '../types/globalTypes';
+import {ButtonWIP} from '../ui/Button';
+import {ColorsWIP} from '../ui/Colors';
+import {DialogBody, DialogFooter, DialogWIP} from '../ui/Dialog';
 import {Group} from '../ui/Group';
 import {HighlightedCodeBlock} from '../ui/HighlightedCodeBlock';
+import {IconWIP} from '../ui/Icon';
 import {MetadataTable} from '../ui/MetadataTable';
+import {Tooltip} from '../ui/Tooltip';
 
 import {RunTags} from './RunTags';
 import {TimeElapsed} from './TimeElapsed';
 import {RunDetailsFragment} from './types/RunDetailsFragment';
 import {RunFragment} from './types/RunFragment';
 
-export const timingStringForStatus = (status?: PipelineRunStatus) => {
+export const timingStringForStatus = (status?: RunStatus) => {
   switch (status) {
-    case PipelineRunStatus.QUEUED:
+    case RunStatus.QUEUED:
       return 'Queued';
-    case PipelineRunStatus.CANCELED:
+    case RunStatus.CANCELED:
       return 'Canceled';
-    case PipelineRunStatus.CANCELING:
+    case RunStatus.CANCELING:
       return 'Canceling…';
-    case PipelineRunStatus.FAILURE:
+    case RunStatus.FAILURE:
       return 'Failed';
-    case PipelineRunStatus.NOT_STARTED:
+    case RunStatus.NOT_STARTED:
       return 'Waiting to start…';
-    case PipelineRunStatus.STARTED:
+    case RunStatus.STARTED:
       return 'Started…';
-    case PipelineRunStatus.STARTING:
+    case RunStatus.STARTING:
       return 'Starting…';
-    case PipelineRunStatus.SUCCESS:
+    case RunStatus.SUCCESS:
       return 'Succeeded';
     default:
       return 'None';
@@ -42,7 +45,7 @@ const LoadingOrValue: React.FC<{
   loading: boolean;
   children: () => React.ReactNode;
 }> = ({loading, children}) =>
-  loading ? <div style={{color: Colors.GRAY3}}>Loading…</div> : <div>{children()}</div>;
+  loading ? <div style={{color: ColorsWIP.Gray400}}>Loading…</div> : <div>{children()}</div>;
 
 const TIME_FORMAT = {showSeconds: true, showTimezone: false};
 
@@ -59,13 +62,13 @@ export const RunDetails: React.FC<{
           value: (
             <LoadingOrValue loading={loading}>
               {() => {
-                if (run?.stats.__typename === 'PipelineRunStatsSnapshot' && run.stats.startTime) {
+                if (run?.stats.__typename === 'RunStatsSnapshot' && run.stats.startTime) {
                   return (
                     <TimestampDisplay timestamp={run.stats.startTime} timeFormat={TIME_FORMAT} />
                   );
                 }
                 return (
-                  <div style={{color: Colors.GRAY3}}>{timingStringForStatus(run?.status)}</div>
+                  <div style={{color: ColorsWIP.Gray400}}>{timingStringForStatus(run?.status)}</div>
                 );
               }}
             </LoadingOrValue>
@@ -76,13 +79,13 @@ export const RunDetails: React.FC<{
           value: (
             <LoadingOrValue loading={loading}>
               {() => {
-                if (run?.stats.__typename === 'PipelineRunStatsSnapshot' && run.stats.endTime) {
+                if (run?.stats.__typename === 'RunStatsSnapshot' && run.stats.endTime) {
                   return (
                     <TimestampDisplay timestamp={run.stats.endTime} timeFormat={TIME_FORMAT} />
                   );
                 }
                 return (
-                  <div style={{color: Colors.GRAY3}}>{timingStringForStatus(run?.status)}</div>
+                  <div style={{color: ColorsWIP.Gray400}}>{timingStringForStatus(run?.status)}</div>
                 );
               }}
             </LoadingOrValue>
@@ -93,13 +96,13 @@ export const RunDetails: React.FC<{
           value: (
             <LoadingOrValue loading={loading}>
               {() => {
-                if (run?.stats.__typename === 'PipelineRunStatsSnapshot' && run.stats.startTime) {
+                if (run?.stats.__typename === 'RunStatsSnapshot' && run.stats.startTime) {
                   return (
                     <TimeElapsed startUnix={run.stats.startTime} endUnix={run.stats.endTime} />
                   );
                 }
                 return (
-                  <div style={{color: Colors.GRAY3}}>{timingStringForStatus(run?.status)}</div>
+                  <div style={{color: ColorsWIP.Gray400}}>{timingStringForStatus(run?.status)}</div>
                 );
               }}
             </LoadingOrValue>
@@ -110,34 +113,36 @@ export const RunDetails: React.FC<{
   );
 };
 
-export const RunConfigDialog: React.FC<{run: RunFragment}> = ({run}) => {
+export const RunConfigDialog: React.FC<{run: RunFragment; isJob: boolean}> = ({run, isJob}) => {
   const [showDialog, setShowDialog] = React.useState(false);
   const {rootServerURI} = React.useContext(AppContext);
   return (
     <div>
       <Group direction="row" spacing={8}>
-        <Button text="View tags and config" icon="tag" onClick={() => setShowDialog(true)} />
+        <ButtonWIP icon={<IconWIP name="tag" />} onClick={() => setShowDialog(true)}>
+          View tags and config
+        </ButtonWIP>
         <Tooltip content="Loadable in dagit-debug" position="bottom-right">
-          <AnchorButton
-            text="Debug file"
-            icon="download"
-            href={`${rootServerURI}/download_debug/${run.runId}`}
-          />
+          <ButtonWIP
+            icon={<IconWIP name="download_for_offline" />}
+            onClick={() => window.open(`${rootServerURI}/download_debug/${run.runId}`)}
+          >
+            Debug file
+          </ButtonWIP>
         </Tooltip>
       </Group>
-
-      <Dialog
+      <DialogWIP
         isOpen={showDialog}
         onClose={() => setShowDialog(false)}
         style={{width: '800px'}}
         title="Run configuration"
       >
-        <div className={Classes.DIALOG_BODY}>
+        <DialogBody>
           <Group direction="column" spacing={20}>
             <Group direction="column" spacing={12}>
               <div style={{fontSize: '16px', fontWeight: 600}}>Tags</div>
               <div>
-                <RunTags tags={run.tags} />
+                <RunTags tags={run.tags} mode={isJob ? null : run.mode} />
               </div>
             </Group>
             <Group direction="column" spacing={12}>
@@ -145,24 +150,22 @@ export const RunConfigDialog: React.FC<{run: RunFragment}> = ({run}) => {
               <HighlightedCodeBlock value={run?.runConfigYaml || ''} language="yaml" />
             </Group>
           </Group>
-        </div>
-        <div className={Classes.DIALOG_FOOTER}>
-          <div className={Classes.DIALOG_FOOTER_ACTIONS}>
-            <Button onClick={() => setShowDialog(false)} intent="primary">
-              OK
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+        </DialogBody>
+        <DialogFooter>
+          <ButtonWIP onClick={() => setShowDialog(false)} intent="primary">
+            OK
+          </ButtonWIP>
+        </DialogFooter>
+      </DialogWIP>
     </div>
   );
 };
 
 export const RUN_DETAILS_FRAGMENT = gql`
-  fragment RunDetailsFragment on PipelineRun {
+  fragment RunDetailsFragment on Run {
     id
     stats {
-      ... on PipelineRunStatsSnapshot {
+      ... on RunStatsSnapshot {
         id
         endTime
         startTime

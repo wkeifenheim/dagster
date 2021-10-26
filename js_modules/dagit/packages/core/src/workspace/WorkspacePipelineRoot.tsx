@@ -1,18 +1,17 @@
-import {NonIdealState} from '@blueprintjs/core';
 import * as React from 'react';
 import {Link, Redirect, useLocation, useRouteMatch} from 'react-router-dom';
 
-import {useFeatureFlags} from '../app/Flags';
 import {explorerPathFromString} from '../pipelines/PipelinePathUtils';
 import {Alert} from '../ui/Alert';
 import {Box} from '../ui/Box';
 import {LoadingSpinner} from '../ui/Loading';
+import {NonIdealState} from '../ui/NonIdealState';
 import {Page} from '../ui/Page';
 import {PageHeader} from '../ui/PageHeader';
 import {Table} from '../ui/Table';
 import {Heading} from '../ui/Text';
 
-import {optionToRepoAddress, useRepositoryOptions} from './WorkspaceContext';
+import {isThisThingAJob, optionToRepoAddress, useRepositoryOptions} from './WorkspaceContext';
 import {buildRepoPath} from './buildRepoAddress';
 import {findRepoContainingPipeline} from './findRepoContainingPipeline';
 import {workspacePath, workspacePathFromAddress} from './workspacePath';
@@ -31,7 +30,6 @@ export const WorkspacePipelineRoot: React.FC<Props> = (props) => {
 
   const {pipelineName} = explorerPathFromString(pipelinePath);
   const {loading, options} = useRepositoryOptions();
-  const {flagPipelineModeTuples} = useFeatureFlags();
 
   if (loading) {
     return <LoadingSpinner purpose="page" />;
@@ -40,51 +38,58 @@ export const WorkspacePipelineRoot: React.FC<Props> = (props) => {
   const reposWithMatch = findRepoContainingPipeline(options, pipelineName);
   if (reposWithMatch.length === 0) {
     return (
-      <NonIdealState
-        icon="cube"
-        title={flagPipelineModeTuples ? 'No matching jobs' : 'No matching pipelines'}
-        description={
-          <div>
+      <Box padding={{vertical: 64}}>
+        <NonIdealState
+          icon="no-results"
+          title="No matching jobs"
+          description={
             <div>
-              <strong>{pipelineName}</strong>
+              <div>
+                <strong>{pipelineName}</strong>
+              </div>
+              was not found in any repositories in this workspace.
             </div>
-            was not found in any repositories in this workspace.
-          </div>
-        }
-      />
+          }
+        />
+      </Box>
     );
   }
 
   if (reposWithMatch.length === 1) {
-    const repoAddress = optionToRepoAddress(reposWithMatch[0]);
-    const to = workspacePathFromAddress(repoAddress, `/pipelines/${toAppend}${search}`);
+    const match = reposWithMatch[0];
+    const repoAddress = optionToRepoAddress(match);
+    const isJob = isThisThingAJob(match, pipelineName);
+    const to = workspacePathFromAddress(
+      repoAddress,
+      `/${isJob ? 'jobs' : 'pipelines'}/${toAppend}${search}`,
+    );
     return <Redirect to={to} />;
   }
+
+  const anyPipelines = reposWithMatch.some((repo) => !isThisThingAJob(repo, pipelineName));
 
   return (
     <Page>
       <PageHeader
         title={<Heading>{pipelineName}</Heading>}
-        icon={flagPipelineModeTuples ? 'send-to-graph' : 'diagram-tree'}
+        icon="job"
         description={
-          flagPipelineModeTuples
-            ? 'Job in multiple repositories'
-            : 'Pipeline in multiple repositories'
+          anyPipelines ? 'Job / pipeline in multiple repositories' : 'Job in multiple repositories'
         }
       />
-      <Box margin={{vertical: 20}}>
+      <Box padding={{vertical: 16, horizontal: 24}}>
         <Alert
           intent="info"
           title={
             <div>
-              {flagPipelineModeTuples ? (
+              {anyPipelines ? (
                 <>
-                  Jobs named <strong>{pipelineName}</strong> were found in multiple repositories.
+                  Jobs or pipelines named <strong>{pipelineName}</strong> were found in multiple
+                  repositories.
                 </>
               ) : (
                 <>
-                  Pipelines named <strong>{pipelineName}</strong> were found in multiple
-                  repositories.
+                  Jobs named <strong>{pipelineName}</strong> were found in multiple repositories.
                 </>
               )}
             </div>
@@ -95,7 +100,7 @@ export const WorkspacePipelineRoot: React.FC<Props> = (props) => {
         <thead>
           <tr>
             <th>Repository name and location</th>
-            <th>{flagPipelineModeTuples ? 'Job' : 'Pipeline'}</th>
+            <th>{anyPipelines ? 'Job / Pipeline' : 'Job'}</th>
           </tr>
         </thead>
         <tbody>
@@ -109,7 +114,15 @@ export const WorkspacePipelineRoot: React.FC<Props> = (props) => {
               <tr key={repoString}>
                 <td style={{width: '40%'}}>{repoString}</td>
                 <td>
-                  <Link to={workspacePath(name, location, `/pipelines/${pipelineName}`)}>
+                  <Link
+                    to={workspacePath(
+                      name,
+                      location,
+                      `/${
+                        isThisThingAJob(repository, pipelineName) ? 'jobs' : 'pipelines'
+                      }/${pipelineName}`,
+                    )}
+                  >
                     {pipelineName}
                   </Link>
                 </td>

@@ -1,10 +1,9 @@
-import {NonIdealState} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
 import React from 'react';
 
-import {useFeatureFlags} from '../app/Flags';
+import {NonIdealState} from '../ui/NonIdealState';
 
-export const NonIdealPipelineQueryResult: React.FC<{
+interface Props {
+  isGraph: boolean;
   result:
     | {
         __typename: 'PipelineSnapshotNotFoundError';
@@ -15,16 +14,21 @@ export const NonIdealPipelineQueryResult: React.FC<{
         message: string;
       }
     | {
+        __typename: 'RepositoryNotFoundError';
+        message: string;
+      }
+    | {
         __typename: 'PythonError';
         message: string;
       };
-}> = ({result}) => {
-  const {flagPipelineModeTuples} = useFeatureFlags();
+}
+
+export const NonIdealPipelineQueryResult: React.FC<Props> = ({isGraph, result}) => {
   if (result.__typename === 'PipelineSnapshotNotFoundError') {
     return (
       <NonIdealState
-        icon={IconNames.FLOW_BRANCH}
-        title={flagPipelineModeTuples ? 'Job snapshot not found' : 'Pipeline snapshot not found'}
+        icon="error"
+        title={isGraph ? 'Graph snapshot not found' : 'Pipeline snapshot not found'}
         description={result.message}
       />
     );
@@ -32,16 +36,19 @@ export const NonIdealPipelineQueryResult: React.FC<{
   if (result.__typename === 'PipelineNotFoundError') {
     return (
       <NonIdealState
-        icon={IconNames.FLOW_BRANCH}
-        title={flagPipelineModeTuples ? 'Job not found' : 'Pipeline not found'}
+        icon="error"
+        title={isGraph ? 'Graph not found' : 'Pipeline not found'}
         description={result.message}
       />
     );
   }
-  if (result.__typename === 'PythonError') {
+  if (result.__typename === 'RepositoryNotFoundError') {
     return (
-      <NonIdealState icon={IconNames.ERROR} title="Query Error" description={result.message} />
+      <NonIdealState icon="error" title={'Repository not found'} description={result.message} />
     );
+  }
+  if (result.__typename === 'PythonError') {
+    return <NonIdealState icon="error" title="Query Error" description={result.message} />;
   }
   return <span />;
 };

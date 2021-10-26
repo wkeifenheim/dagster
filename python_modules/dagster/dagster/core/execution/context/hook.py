@@ -2,14 +2,13 @@ import warnings
 from typing import Any, Dict, Optional, Set, Union, cast
 
 from dagster import check
-from dagster.utils.backcompat import experimental_arg_warning
 
 from ...definitions.composition import PendingNodeInvocation
 from ...definitions.decorators.graph import graph
 from ...definitions.dependency import Node
 from ...definitions.hook import HookDefinition
 from ...definitions.mode import ModeDefinition
-from ...definitions.op import OpDefinition
+from ...definitions.op_def import OpDefinition
 from ...definitions.resource import IContainsGenerator, Resources
 from ...definitions.solid import SolidDefinition
 from ...errors import DagsterInvalidPropertyError, DagsterInvariantViolationError
@@ -32,12 +31,18 @@ class HookContext:
         log (DagsterLogManager): Centralized log dispatch from user code.
         hook_def (HookDefinition): The hook that the context object belongs to.
         solid (Solid): The solid instance associated with the hook.
+        op (Op): The op instance associated with the hook.
         step_key (str): The key for the step where this hook is being triggered.
+        required_resource_keys (Set[str]): Resources required by this hook.
         resources (Resources): Resources available in the hook context.
         solid_config (Any): The parsed config specific to this solid.
+        op_config (Any): The parsed config specific to this op.
         pipeline_name (str): The name of the pipeline where this hook is being triggered.
+        job_name (str): The name of the job where this hook is being triggered.
         run_id (str): The id of the run where this hook is being triggered.
         mode_def (ModeDefinition): The mode with which the pipeline is being run.
+        op_exception (Optional[BaseException]): The thrown exception in a failed op.
+        op_output_values (Dict): Computed output values in an op.
     """
 
     def __init__(
@@ -55,6 +60,10 @@ class HookContext:
     @property
     def pipeline_name(self) -> str:
         return self._step_execution_context.pipeline_name
+
+    @property
+    def job_name(self) -> str:
+        return self.pipeline_name
 
     @property
     def run_id(self) -> str:
@@ -376,6 +385,8 @@ def build_hook_context(
         mode_def (Optional[ModeDefinition]): The mode definition used with the context.
         solid (Optional[SolidDefinition, PendingNodeInvocation]): The solid definition which the
             hook may be associated with.
+        op (Optional[OpDefinition, PendingNodeInvocation]): The op definition which the
+            hook may be associated with.
 
     Examples:
         .. code-block:: python
@@ -388,7 +399,6 @@ def build_hook_context(
     """
     check.invariant(not (solid and op), "cannot set both `solid` and `op`")
     if op:
-        experimental_arg_warning("op", "build_hook_context")
         return UnboundHookContext(
             resources=check.opt_dict_param(resources, "resources", key_type=str),
             mode_def=None,

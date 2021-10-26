@@ -1,11 +1,12 @@
 import {gql, useQuery} from '@apollo/client';
-import {Colors, NonIdealState} from '@blueprintjs/core';
 import * as React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components/macro';
 
+import {Box} from '../ui/Box';
+import {ColorsWIP} from '../ui/Colors';
 import {Group} from '../ui/Group';
-import {Page} from '../ui/Page';
+import {NonIdealState} from '../ui/NonIdealState';
 import {Table} from '../ui/Table';
 
 import {repoAddressAsString} from './repoAddressAsString';
@@ -96,41 +97,40 @@ export const RepositoryGraphsList: React.FC<Props> = (props) => {
 
   if (error || !graphsForTable) {
     return (
-      <NonIdealState
-        title="Unable to load graphs"
-        description={`Could not load graphs for ${repoAddressAsString(repoAddress)}`}
-      />
+      <Box padding={{vertical: 64}}>
+        <NonIdealState
+          icon="error"
+          title="Unable to load graphs"
+          description={`Could not load graphs for ${repoAddressAsString(repoAddress)}`}
+        />
+      </Box>
     );
   }
 
   return (
-    <Page>
-      <Table>
-        <thead>
-          <tr>
-            <th>Graph</th>
+    <Table>
+      <thead>
+        <tr>
+          <th>Graph</th>
+        </tr>
+      </thead>
+      <tbody>
+        {graphsForTable.map(({name, description, path, repoAddress}) => (
+          <tr key={`${name}-${repoAddressAsString(repoAddress)}`}>
+            <td>
+              <Group direction="column" spacing={4}>
+                <Link to={workspacePath(repoAddress.name, repoAddress.location, path)}>{name}</Link>
+                <Description>{description}</Description>
+              </Group>
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {graphsForTable.map(({name, description, path, repoAddress}) => (
-            <tr key={`${name}-${repoAddressAsString(repoAddress)}`}>
-              <td>
-                <Group direction="column" spacing={4}>
-                  <Link to={workspacePath(repoAddress.name, repoAddress.location, path)}>
-                    {name}
-                  </Link>
-                  <Description>{description}</Description>
-                </Group>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-    </Page>
+        ))}
+      </tbody>
+    </Table>
   );
 };
 
 const Description = styled.div`
-  color: ${Colors.GRAY3};
+  color: ${ColorsWIP.Gray400};
   font-size: 12px;
 `;

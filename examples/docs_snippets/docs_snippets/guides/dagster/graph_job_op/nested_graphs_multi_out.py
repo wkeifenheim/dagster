@@ -13,11 +13,11 @@ def return_multi():
     yield Output(2, "two")
 
 
-@graph(out={"one": GraphOut(int), "two": GraphOut(int)})
+@graph(out={"one": GraphOut(), "two": GraphOut()})
 def do_two_things():
     do_something()
     one, two = return_multi()
-    return {"one": one, "two": two}
+    return (one, two)
 
 
 @op

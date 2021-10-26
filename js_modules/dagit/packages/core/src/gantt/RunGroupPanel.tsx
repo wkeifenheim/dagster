@@ -1,17 +1,19 @@
 import {gql, useQuery} from '@apollo/client';
-import {Colors, Icon} from '@blueprintjs/core';
 import React from 'react';
 import {Link} from 'react-router-dom';
 import styled from 'styled-components/macro';
 
 import {showCustomAlert} from '../app/CustomAlertProvider';
 import {SidebarSection} from '../pipelines/SidebarComponents';
-import {RunStatus} from '../runs/RunStatusDots';
+import {RunStatusIndicator} from '../runs/RunStatusDots';
 import {DagsterTag} from '../runs/RunTag';
 import {RunElapsed, RunTime, RUN_TIME_FRAGMENT} from '../runs/RunUtils';
 import {Box} from '../ui/Box';
 import {ButtonLink} from '../ui/ButtonLink';
+import {ColorsWIP} from '../ui/Colors';
 import {Group} from '../ui/Group';
+import {IconWIP} from '../ui/Icon';
+import {FontFamily} from '../ui/styles';
 
 import {RunGroupPanelQuery} from './types/RunGroupPanelQuery';
 
@@ -20,31 +22,37 @@ function subsetTitleForRun(run: {tags: {key: string; value: string}[]}) {
   return stepsTag ? stepsTag.value : '*';
 }
 
-export const RunGroupPanel: React.FC<{runId: string}> = ({runId}) => {
-  const queryResult = useQuery<RunGroupPanelQuery>(RUN_GROUP_PANEL_QUERY, {
+export const RunGroupPanel: React.FC<{runId: string; runStatusLastChangedAt: number}> = ({
+  runId,
+  runStatusLastChangedAt,
+}) => {
+  const {data, refetch} = useQuery<RunGroupPanelQuery>(RUN_GROUP_PANEL_QUERY, {
     variables: {runId},
     fetchPolicy: 'cache-and-network',
     pollInterval: 15000, // 15s
   });
 
-  const group = queryResult.data?.runGroupOrError;
+  // Because the RunGroupPanel makes it's own query for the runs and their statuses,
+  // the log + gantt chart UI can show that the run is "completed" for up to 15s before
+  // it's reflected in the sidebar. Observing this single timestamp from our parent
+  // allows us to refetch data immediately when the run's exitedAt / startedAt, etc. is set.
+  React.useEffect(() => {
+    refetch();
+  }, [refetch, runStatusLastChangedAt]);
+
+  const group = data?.runGroupOrError;
 
   if (!group || group.__typename === 'RunGroupNotFoundError') {
-    return <div />;
+    return null;
   }
   if (group.__typename === 'PythonError') {
     return (
       <Group direction="row" spacing={8} padding={8}>
-        <Icon
-          icon="warning-sign"
-          color={Colors.GOLD3}
-          iconSize={13}
-          style={{position: 'relative', top: '-1px'}}
-        />
+        <IconWIP name="warning" color={ColorsWIP.Yellow500} />
         <div style={{fontSize: '13px'}}>
           The run group for this run could not be loaded.{' '}
           <ButtonLink
-            color={Colors.BLUE3}
+            color={ColorsWIP.Blue500}
             underline="always"
             onClick={() => {
               showCustomAlert({
@@ -59,8 +67,9 @@ export const RunGroupPanel: React.FC<{runId: string}> = ({runId}) => {
       </Group>
     );
   }
+
   if (group.runs?.length === 1) {
-    return <div />;
+    return null;
   }
 
   const runs = (group.runs || []).filter((g) => g !== null);
@@ -77,7 +86,7 @@ export const RunGroupPanel: React.FC<{runId: string}> = ({runId}) => {
             >
               {idx < runs.length - 1 && <ThinLine style={{height: 36}} />}
               <Box padding={{top: 4}}>
-                <RunStatus status={g.status} />
+                <RunStatusIndicator status={g.status} />
               </Box>
 
               <div
@@ -85,7 +94,7 @@ export const RunGroupPanel: React.FC<{runId: string}> = ({runId}) => {
                   flex: 1,
                   marginLeft: 5,
                   minWidth: 0,
-                  color: Colors.DARK_GRAY5,
+                  color: ColorsWIP.Gray700,
                 }}
               >
                 <div style={{display: 'flex', justifyContent: 'space-between'}}>
@@ -99,7 +108,7 @@ export const RunGroupPanel: React.FC<{runId: string}> = ({runId}) => {
                 <div
                   style={{
                     display: 'flex',
-                    color: Colors.DARK_GRAY5,
+                    color: ColorsWIP.Gray700,
                     justifyContent: 'space-between',
                   }}
                 >
@@ -145,30 +154,30 @@ const RUN_GROUP_PANEL_QUERY = gql`
 
 const RunGroupRun = styled(Link)<{selected: boolean}>`
   align-items: flex-start;
-  background: ${({selected}) => (selected ? Colors.LIGHT_GRAY2 : Colors.WHITE)};
-  padding: 3px 6px;
-  font-size: 13px;
+  background: ${({selected}) => (selected ? ColorsWIP.Gray100 : ColorsWIP.White)};
+  padding: 4px 6px 4px 24px;
+  font-family: ${FontFamily.monospace};
+  font-size: 14px;
   line-height: 20px;
   display: flex;
   position: relative;
-  padding-left: 6px;
   &:hover {
     text-decoration: none;
-    background: ${({selected}) => (selected ? Colors.LIGHT_GRAY2 : Colors.LIGHT_GRAY5)};
+    background: ${({selected}) => (selected ? ColorsWIP.Gray100 : ColorsWIP.Gray50)};
   }
 `;
 
 const ThinLine = styled.div`
   position: absolute;
-  top: 17px;
+  top: 20px;
   width: 1px;
-  border-right: 1px solid rgba(0, 0, 0, 0.2);
-  left: 11px;
+  background: ${ColorsWIP.Gray200};
+  left: 29px;
   z-index: 2;
 `;
 
 const RunTitle = styled.span`
-  color: ${Colors.BLACK};
+  color: ${ColorsWIP.Dark};
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -182,12 +191,12 @@ const RootTag = (
       borderRadius: 2,
       fontSize: 12,
       lineHeight: '14px',
-      background: 'rgb(118, 144, 188, 0.5)',
-      color: 'white',
+      background: ColorsWIP.Gray300,
+      color: ColorsWIP.White,
       padding: '0 4px',
       fontWeight: 400,
       userSelect: 'none',
-      marginLeft: 4,
+      marginLeft: 12,
     }}
   >
     ROOT

@@ -1,15 +1,16 @@
 import {gql, useQuery} from '@apollo/client';
-import {Colors, Intent, Popover} from '@blueprintjs/core';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 
-import {useFeatureFlags} from '../app/Flags';
 import {filterByQuery} from '../app/GraphQueryImpl';
 import {ShortcutHandler} from '../app/ShortcutHandler';
 import {PipelineGraph, PIPELINE_GRAPH_SOLID_FRAGMENT} from '../graph/PipelineGraph';
 import {SVGViewport} from '../graph/SVGViewport';
 import {getDagrePipelineLayout} from '../graph/getFullSolidLayout';
+import {ColorsWIP} from '../ui/Colors';
 import {GraphQueryInput} from '../ui/GraphQueryInput';
+import {Popover} from '../ui/Popover';
+import {isThisThingAJob, useRepository} from '../workspace/WorkspaceContext';
 import {repoAddressToSelector} from '../workspace/repoAddressToSelector';
 import {RepoAddress} from '../workspace/types';
 
@@ -54,7 +55,7 @@ class SolidSelectorModal extends React.PureComponent<SolidSelectorModalProps> {
         {errorMessage && <ModalErrorOverlay>{errorMessage}</ModalErrorOverlay>}
         <PipelineGraph
           ref={this.graphRef}
-          backgroundColor={Colors.WHITE}
+          backgroundColor={ColorsWIP.White}
           pipelineName={pipelineOrError.name}
           solids={queryResultSolids}
           layout={getDagrePipelineLayout(queryResultSolids)}
@@ -102,7 +103,10 @@ export const SolidSelector = (props: ISolidSelectorProps) => {
     pipelineName,
   };
 
-  const {flagPipelineModeTuples} = useFeatureFlags();
+  const repo = useRepository(repoAddress);
+  const isJob = isThisThingAJob(repo, pipelineName);
+
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const {data, loading} = useQuery<SolidSelectorQuery>(SOLID_SELECTOR_QUERY, {
     variables: {selector},
@@ -129,13 +133,13 @@ export const SolidSelector = (props: ISolidSelectorProps) => {
 
   const errorMessage = React.useMemo(() => {
     if (invalidResult) {
-      return flagPipelineModeTuples
+      return isJob
         ? `You must provide a valid op query or * to execute the entire job.`
         : `You must provide a valid solid query or * to execute the entire pipeline.`;
     }
 
     return serverProvidedSubsetError ? serverProvidedSubsetError.message : pipelineErrorMessage;
-  }, [flagPipelineModeTuples, invalidResult, pipelineErrorMessage, serverProvidedSubsetError]);
+  }, [invalidResult, isJob, pipelineErrorMessage, serverProvidedSubsetError]);
 
   const onCommitPendingValue = (applied: string) => {
     if (data?.pipelineOrError.__typename !== 'Pipeline') {
@@ -159,24 +163,36 @@ export const SolidSelector = (props: ISolidSelectorProps) => {
     }
   };
 
+  if (!data?.pipelineOrError) {
+    return null;
+  }
+
   return (
-    <div style={{position: 'relative'}}>
+    <div>
       <Popover
-        autoFocus={false}
         isOpen={focused}
-        minimal
-        modifiers={{arrow: {enabled: false}, offset: {enabled: true, offset: '0, 8px'}}}
         position="bottom-left"
+        content={
+          <SolidSelectorModal
+            pipelineOrError={data.pipelineOrError}
+            errorMessage={errorMessage}
+            queryResultSolids={queryResultSolids}
+          />
+        }
       >
-        <ShortcutHandler shortcutLabel={'⌥S'} shortcutFilter={(e) => e.keyCode === 83 && e.altKey}>
+        <ShortcutHandler
+          shortcutLabel="⌥S"
+          shortcutFilter={(e) => e.code === 'KeyS' && e.altKey}
+          onShortcut={() => inputRef.current?.focus()}
+        >
           <GraphQueryInput
             width={(pending !== '*' && pending !== '') || focused ? 350 : 90}
-            intent={errorMessage ? Intent.DANGER : Intent.NONE}
+            intent={errorMessage ? 'danger' : 'none'}
             items={
               data?.pipelineOrError.__typename === 'Pipeline' ? data?.pipelineOrError.solids : []
             }
             value={pending}
-            placeholder={flagPipelineModeTuples ? 'Type an op subset' : 'Type a solid subset'}
+            placeholder="Type an op subset…"
             onChange={setPending}
             onBlur={(pending) => {
               onCommitPendingValue(pending);
@@ -191,15 +207,9 @@ export const SolidSelector = (props: ISolidSelectorProps) => {
                 e.currentTarget.blur();
               }
             }}
+            ref={inputRef}
           />
         </ShortcutHandler>
-        {data?.pipelineOrError && (
-          <SolidSelectorModal
-            pipelineOrError={data?.pipelineOrError}
-            errorMessage={errorMessage}
-            queryResultSolids={queryResultSolids}
-          />
-        )}
       </Popover>
     </div>
   );
@@ -209,7 +219,7 @@ const SolidSelectorModalContainer = styled.div`
   border-radius: 4px;
   width: 60vw;
   height: 60vh;
-  background: ${Colors.WHITE};
+  background: ${ColorsWIP.White};
   & > div {
     border-radius: 4px;
   }
@@ -221,7 +231,7 @@ const ModalErrorOverlay = styled.div`
   padding: 4px 8px;
   z-index: 2;
   border-radius: 2px;
-  border: 1px solid ${Colors.RED3};
-  background: ${Colors.RED5};
+  border: 1px solid ${ColorsWIP.Red500};
+  background: ${ColorsWIP.Red200};
   color: white;
 `;

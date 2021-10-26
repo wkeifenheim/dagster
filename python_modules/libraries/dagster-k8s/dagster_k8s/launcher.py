@@ -21,9 +21,9 @@ from .utils import delete_job
 
 
 class K8sRunLauncher(RunLauncher, ConfigurableClass):
-    """RunLauncher that starts a Kubernetes Job for each pipeline run.
+    """RunLauncher that starts a Kubernetes Job for each Dagster job run.
 
-    Encapsulates each pipeline run in a separate, isolated invocation of ``dagster-graphql``.
+    Encapsulates each run in a separate, isolated invocation of ``dagster-graphql``.
 
     You may configure a Dagster instance to use this RunLauncher by adding a section to your
     ``dagster.yaml`` like the following:
@@ -34,7 +34,7 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
             module: dagster_k8s.launcher
             class: K8sRunLauncher
             config:
-                service_account_name: pipeline_run_service_account
+                service_account_name: your_service_account
                 job_image: my_project/dagster_image:latest
                 instance_config_map: dagster-instance
                 postgres_password_secret: dagster-postgresql-secret
@@ -88,6 +88,11 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
             https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/#configure-all-key-value-pairs-in-a-secret-as-container-environment-variables
         env_vars (Optional[List[str]]): A list of environment variables to inject into the Job.
             Default: ``[]``. See: https://kubernetes.io/docs/tasks/inject-data-application/distribute-credentials-secure/#configure-all-key-value-pairs-in-a-secret-as-container-environment-variables
+        volume_mounts (Optional[List[Permissive]]): A list of volume mounts to include in the job's
+            container. Default: ``[]``. See:
+            https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#volumemount-v1-core
+        volumes (Optional[List[Permissive]]): A list of volumes to include in the Job's Pod. Default: ``[]``. See:
+            https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#volume-v1-core
     """
 
     def __init__(
@@ -107,6 +112,8 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
         env_secrets=None,
         env_vars=None,
         k8s_client_batch_api=None,
+        volume_mounts=None,
+        volumes=None,
     ):
         self._inst_data = check.opt_inst_param(inst_data, "inst_data", ConfigurableClassData)
         self.job_namespace = check.str_param(job_namespace, "job_namespace")
@@ -144,6 +151,8 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
         )
         self._env_secrets = check.opt_list_param(env_secrets, "env_secrets", of_type=str)
         self._env_vars = check.opt_list_param(env_vars, "env_vars", of_type=str)
+        self._volume_mounts = check.opt_list_param(volume_mounts, "volume_mounts")
+        self._volumes = check.opt_list_param(volumes, "volumes")
 
         super().__init__()
 
@@ -166,6 +175,14 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
     @property
     def env_secrets(self):
         return self._env_secrets
+
+    @property
+    def volume_mounts(self):
+        return self._volume_mounts
+
+    @property
+    def volumes(self):
+        return self._volumes
 
     @property
     def _batch_api(self):
@@ -218,6 +235,8 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
                 ),
                 env_secrets=check.opt_list_param(self._env_secrets, "env_secrets", of_type=str),
                 env_vars=check.opt_list_param(self._env_vars, "env_vars", of_type=str),
+                volume_mounts=self._volume_mounts,
+                volumes=self._volumes,
             )
             return self._job_config
 
@@ -241,6 +260,8 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
             ),
             env_secrets=check.opt_list_param(self._env_secrets, "env_secrets", of_type=str),
             env_vars=check.opt_list_param(self._env_vars, "env_vars", of_type=str),
+            volume_mounts=self._volume_mounts,
+            volumes=self._volumes,
         )
 
     def launch_run(self, context: LaunchRunContext) -> None:
@@ -330,9 +351,7 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
         can_terminate = self.can_terminate(run_id)
         if not can_terminate:
             self._instance.report_engine_event(
-                message="Unable to terminate pipeline; can_terminate returned {}".format(
-                    can_terminate
-                ),
+                message="Unable to terminate run; can_terminate returned {}".format(can_terminate),
                 pipeline_run=run,
                 cls=self.__class__,
             )
@@ -346,13 +365,13 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
             termination_result = delete_job(job_name=job_name, namespace=self.job_namespace)
             if termination_result:
                 self._instance.report_engine_event(
-                    message="Pipeline was terminated successfully.",
+                    message="Run was terminated successfully.",
                     pipeline_run=run,
                     cls=self.__class__,
                 )
             else:
                 self._instance.report_engine_event(
-                    message="Pipeline was not terminated successfully; delete_job returned {}".format(
+                    message="Run was not terminated successfully; delete_job returned {}".format(
                         termination_result
                     ),
                     pipeline_run=run,
@@ -361,7 +380,7 @@ class K8sRunLauncher(RunLauncher, ConfigurableClass):
             return termination_result
         except Exception:  # pylint: disable=broad-except
             self._instance.report_engine_event(
-                message="Pipeline was not terminated successfully; encountered error in delete_job",
+                message="Run was not terminated successfully; encountered error in delete_job",
                 pipeline_run=run,
                 engine_event_data=EngineEventData.engine_error(
                     serializable_error_info_from_exc_info(sys.exc_info())

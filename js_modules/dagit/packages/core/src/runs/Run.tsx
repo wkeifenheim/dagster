@@ -1,6 +1,4 @@
 import {useMutation} from '@apollo/client';
-import {NonIdealState} from '@blueprintjs/core';
-import {IconNames} from '@blueprintjs/icons';
 import * as React from 'react';
 import styled from 'styled-components/macro';
 
@@ -12,7 +10,11 @@ import {showLaunchError} from '../execute/showLaunchError';
 import {GanttChart, GanttChartLoadingState, GanttChartMode, QueuedState} from '../gantt/GanttChart';
 import {toGraphQueryItems} from '../gantt/toGraphQueryItems';
 import {useDocumentTitle} from '../hooks/useDocumentTitle';
+import {useFavicon} from '../hooks/useFavicon';
 import {useQueryPersistedState} from '../hooks/useQueryPersistedState';
+import {RunStatus} from '../types/globalTypes';
+import {Box} from '../ui/Box';
+import {NonIdealState} from '../ui/NonIdealState';
 import {FirstOrSecondPanelToggle, SplitPanelContainer} from '../ui/SplitPanelContainer';
 import {useRepositoryForRun} from '../workspace/useRepositoryForRun';
 
@@ -33,18 +35,30 @@ import {
   LaunchPipelineReexecution,
   LaunchPipelineReexecutionVariables,
 } from './types/LaunchPipelineReexecution';
-import {RunFragment} from './types/RunFragment';
 import {
-  RunPipelineRunEventFragment,
-  RunPipelineRunEventFragment_ExecutionStepFailureEvent,
-} from './types/RunPipelineRunEventFragment';
+  RunDagsterRunEventFragment,
+  RunDagsterRunEventFragment_ExecutionStepFailureEvent,
+} from './types/RunDagsterRunEventFragment';
+import {RunFragment} from './types/RunFragment';
 import {useQueryPersistedLogFilter} from './useQueryPersistedLogFilter';
-import {useRunFavicon} from './useRunFavicon';
 
 interface RunProps {
   runId: string;
   run?: RunFragment;
 }
+
+const runStatusFavicon = (status: RunStatus) => {
+  switch (status) {
+    case RunStatus.CANCELED:
+    case RunStatus.CANCELING:
+    case RunStatus.FAILURE:
+      return '/favicon-run-failed.svg';
+    case RunStatus.SUCCESS:
+      return '/favicon-run-success.svg';
+    default:
+      return '/favicon-run-pending.svg';
+  }
+};
 
 export const Run: React.FC<RunProps> = (props) => {
   const {run, runId} = props;
@@ -54,13 +68,15 @@ export const Run: React.FC<RunProps> = (props) => {
     defaults: {selection: ''},
   });
 
-  useRunFavicon(run?.status);
-  useDocumentTitle(run ? `${run.pipeline.name} ${runId} [${run.status}]` : `Run: ${runId}`);
+  useFavicon(run ? runStatusFavicon(run.status) : '/favicon.svg');
+  useDocumentTitle(
+    run ? `${run.pipeline.name} ${runId.slice(0, 8)} [${run.status}]` : `Run: ${runId}`,
+  );
 
-  const onShowStateDetails = (stepKey: string, logs: RunPipelineRunEventFragment[]) => {
+  const onShowStateDetails = (stepKey: string, logs: RunDagsterRunEventFragment[]) => {
     const errorNode = logs.find(
       (node) => node.__typename === 'ExecutionStepFailureEvent' && node.stepKey === stepKey,
-    ) as RunPipelineRunEventFragment_ExecutionStepFailureEvent;
+    ) as RunDagsterRunEventFragment_ExecutionStepFailureEvent;
 
     if (errorNode) {
       showCustomAlert({
@@ -111,7 +127,7 @@ interface RunWithDataProps {
   metadata: IRunMetadataDict;
   onSetLogsFilter: (v: LogFilter) => void;
   onSetSelectionQuery: (query: string) => void;
-  onShowStateDetails: (stepKey: string, logs: RunPipelineRunEventFragment[]) => void;
+  onShowStateDetails: (stepKey: string, logs: RunDagsterRunEventFragment[]) => void;
 }
 
 const logTypeFromQuery = (queryLogType: string) => {
@@ -230,7 +246,7 @@ const RunWithData: React.FunctionComponent<RunWithDataProps> = ({
       const result = await launchPipelineReexecution({variables});
       handleLaunchResult(basePath, run.pipeline.name, result);
     } catch (error) {
-      showLaunchError(error);
+      showLaunchError(error as Error);
     }
   };
 
@@ -263,31 +279,31 @@ const RunWithData: React.FunctionComponent<RunWithDataProps> = ({
   };
 
   const gantt = (metadata: IRunMetadataDict) => {
-    if (logs.loading) {
+    if (logs.loading || !run) {
       return <GanttChartLoadingState runId={runId} />;
     }
 
-    if (run?.status === 'QUEUED') {
+    if (run.status === 'QUEUED') {
       return <QueuedState runId={runId} />;
     }
 
-    if (run?.executionPlan && runtimeGraph) {
+    if (run.executionPlan && runtimeGraph) {
       return (
         <GanttChart
           options={{
             mode: GanttChartMode.WATERFALL_TIMED,
           }}
-          toolbarLeftActions={
-            <FirstOrSecondPanelToggle axis={'vertical'} container={splitPanelContainer} />
-          }
           toolbarActions={
-            <RunActionButtons
-              run={run}
-              onLaunch={onLaunch}
-              graph={runtimeGraph}
-              metadata={metadata}
-              selection={{query: selectionQuery, keys: selectionStepKeys}}
-            />
+            <Box flex={{direction: 'row', alignItems: 'center', gap: 12}}>
+              <FirstOrSecondPanelToggle axis="vertical" container={splitPanelContainer} />
+              <RunActionButtons
+                run={run}
+                onLaunch={onLaunch}
+                graph={runtimeGraph}
+                metadata={metadata}
+                selection={{query: selectionQuery, keys: selectionStepKeys}}
+              />
+            </Box>
           }
           runId={runId}
           graph={runtimeGraph}
@@ -300,17 +316,17 @@ const RunWithData: React.FunctionComponent<RunWithDataProps> = ({
       );
     }
 
-    return <NonIdealState icon={IconNames.ERROR} title="Unable to build execution plan" />;
+    return <NonIdealState icon="error" title="Unable to build execution plan" />;
   };
 
   return (
     <>
       <SplitPanelContainer
         ref={splitPanelContainer}
-        axis={'vertical'}
+        axis="vertical"
         identifier="run-gantt"
         firstInitialPercent={35}
-        firstMinSize={40}
+        firstMinSize={56}
         first={gantt(metadata)}
         second={
           <LogsContainer>
@@ -353,5 +369,4 @@ const LogsContainer = styled.div`
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #f1f6f9;
 `;

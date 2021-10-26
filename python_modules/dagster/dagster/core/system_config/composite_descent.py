@@ -37,7 +37,7 @@ class DescentStack(namedtuple("_DescentStack", "pipeline_def handle")):
 
     @property
     def current_container(self):
-        return self.current_solid.definition if self.handle else self.pipeline_def
+        return self.current_solid.definition if self.handle else self.pipeline_def.graph
 
     @property
     def current_solid(self):
@@ -76,13 +76,22 @@ def composite_descent(pipeline_def, solids_config, resource_defs):
     check.dict_param(solids_config, "solids_config")
     check.dict_param(resource_defs, "resource_defs", key_type=str, value_type=ResourceDefinition)
 
+    # If top-level graph has config mapping, apply that config mapping before descending.
+    if pipeline_def.graph.has_config_mapping:
+        solids_config = _apply_top_level_config_mapping(
+            pipeline_def,
+            solids_config,
+            resource_defs,
+            pipeline_def.is_job,  # pylint: disable=protected-access
+        )
+
     return {
         handle.to_string(): solid_config
         for handle, solid_config in _composite_descent(
             parent_stack=DescentStack(pipeline_def, None),
             solids_config_dict=solids_config,
             resource_defs=resource_defs,
-            is_using_graph_job_op_apis=pipeline_def._is_using_graph_job_op_apis,  # pylint: disable=protected-access
+            is_using_graph_job_op_apis=pipeline_def.is_job,  # pylint: disable=protected-access
         )
     }
 
@@ -115,7 +124,7 @@ def _composite_descent(parent_stack, solids_config_dict, resource_defs, is_using
             )
             if not config_mapped_solid_config.success:
                 raise DagsterInvalidConfigError(
-                    "Error in config for solid {}".format(solid.name),
+                    f"Error in config for {solid.describe_node()()}".format(solid.name),
                     config_mapped_solid_config.errors,
                     config_mapped_solid_config,
                 )
@@ -150,13 +159,61 @@ def _composite_descent(parent_stack, solids_config_dict, resource_defs, is_using
                 resource_defs,
                 is_using_graph_job_op_apis,
             )
-            if graph_def.config_mapping
+            if graph_def.has_config_mapping
             else current_solid_config.get(node_key, {})
         )
 
         yield from _composite_descent(
             current_stack, solids_dict, resource_defs, is_using_graph_job_op_apis
         )
+
+
+def _apply_top_level_config_mapping(
+    pipeline_def,
+    outer_config,
+    resource_defs,
+    is_using_graph_job_op_apis,
+):
+    graph_def = pipeline_def.graph
+
+    if not graph_def.has_config_mapping:
+        return outer_config
+
+    else:
+        mapped_config_evr = graph_def.apply_config_mapping(outer_config)
+        if not mapped_config_evr.success:
+            raise DagsterInvalidConfigError(
+                "Error in config for graph {}".format(graph_def.name),
+                mapped_config_evr.errors,
+                outer_config,
+            )
+
+        with user_code_error_boundary(
+            DagsterConfigMappingFunctionError, _get_top_level_error_lambda(pipeline_def)
+        ):
+            mapped_graph_config = graph_def.config_mapping.resolve_from_validated_config(
+                mapped_config_evr.value.get("config", {})
+            )
+
+        # Dynamically construct the type that the output of the config mapping function will
+        # be evaluated against
+
+        type_to_evaluate_against = define_solid_dictionary_cls(
+            solids=graph_def.solids,
+            ignored_solids=None,
+            dependency_structure=graph_def.dependency_structure,
+            resource_defs=resource_defs,
+            is_using_graph_job_op_apis=is_using_graph_job_op_apis,
+        )
+
+        # process against that new type
+
+        evr = process_config(type_to_evaluate_against, mapped_graph_config)
+
+        if not evr.success:
+            raise_top_level_config_error(pipeline_def, mapped_graph_config, evr)
+
+        return evr.value
 
 
 def _get_mapped_solids_dict(
@@ -219,16 +276,30 @@ def _get_mapped_solids_dict(
 
 def _get_error_lambda(current_stack):
     return lambda: (
-        "The config mapping function on the composite solid definition "
-        '"{definition_name}" at solid "{solid_name}" in pipeline "{pipeline_name}" '
+        "The config mapping function on {described_node} in {described_target} "
         "has thrown an unexpected error during its execution. The definition is "
         'instantiated at stack "{stack_str}".'
     ).format(
-        definition_name=current_stack.current_solid.definition.name,
-        solid_name=current_stack.current_solid.name,
-        pipeline_name=current_stack.pipeline_def.name,
+        described_node=current_stack.current_solid.describe_node(),
+        described_target=current_stack.pipeline_def.describe_target(),
         stack_str=":".join(current_stack.handle.path),
     )
+
+
+def _get_top_level_error_lambda(pipeline_def):
+    return lambda: (
+        f"The config mapping function on top-level graph {pipeline_def.graph.name} in job "
+        f"{pipeline_def.name} has thrown an unexpected error during its execution."
+    )
+
+
+def raise_top_level_config_error(pipeline_def, failed_config_value, evr):
+    message = (
+        f"In pipeline '{pipeline_def.name}', top level graph '{pipeline_def.graph.name}' has a "
+        "configuration error."
+    )
+
+    raise DagsterInvalidConfigError(message, evr.errors, failed_config_value)
 
 
 def raise_composite_descent_config_error(descent_stack, failed_config_value, evr):
