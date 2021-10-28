@@ -33,6 +33,7 @@ RUN pip install \
     -e .
 
 RUN ! (pip list --exclude-editable | grep -e dagster -e dagit)
+RUN pip install 'pyparsing<3.0.0' --force-reinstall
 
 WORKDIR /dagster_test/test_project/
 

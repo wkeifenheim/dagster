@@ -507,7 +507,9 @@ def helm_chart(namespace, docker_image, should_cleanup=True):
         "postgresqlPassword": "test",
         "postgresqlDatabase": "test",
         "postgresqlUser": "test",
-        "dagsterDaemon": {"enabled": True},
+        "dagsterDaemon": {
+            "image": {"repository": repository, "tag": tag, "pullPolicy": pull_policy}
+        },
     }
 
     with _helm_chart_helper(namespace, should_cleanup, helm_config, helm_install_name="helm_chart"):
@@ -570,7 +572,9 @@ def helm_chart_for_k8s_run_launcher(namespace, docker_image, should_cleanup=True
         "postgresqlPassword": "test",
         "postgresqlDatabase": "test",
         "postgresqlUser": "test",
-        "dagsterDaemon": {"enabled": True},
+        "dagsterDaemon": {
+            "image": {"repository": repository, "tag": tag, "pullPolicy": pull_policy},
+        },
     }
 
     with _helm_chart_helper(

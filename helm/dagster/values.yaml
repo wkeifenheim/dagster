@@ -343,7 +343,6 @@ runLauncher:
   config:
     # This configuration will only be used if the K8sRunLauncher is selected
     k8sRunLauncher:
-
       # Change with caution! If you're using a fixed tag for pipeline run images, changing the
       # image pull policy to anything other than "Always" will use a cached/stale image, which is
       # almost certainly not what you want.
@@ -412,7 +411,6 @@ runLauncher:
       #     mountPath: /opt/dagster/test_folder
       #     subPath: test_file.yaml
       volumeMounts: []
-
 
     # This configuration will only be used if the CeleryK8sRunLauncher is selected
     celeryK8sRunLauncher:
@@ -832,6 +830,13 @@ dagsterDaemon:
     #     module: ~
     #     class: ~
     #     config: {}
+
+  # Experimental
+  runMonitoring:
+    enabled: false
+    start_timeout_seconds: ~
+    max_resume_run_attempts: ~
+    poll_interval_seconds: ~
 
   # Additional environment variables to set.
   # A Kubernetes ConfigMap will be created with these environment variables. See:
