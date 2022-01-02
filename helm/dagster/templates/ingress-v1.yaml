@@ -1,4 +1,7 @@
 {{- if and (.Values.ingress.enabled) (.Capabilities.APIVersions.Has "networking.k8s.io/v1/Ingress") -}}
+{{- $dagitPathType := .Values.ingress.dagit.pathType | default "Prefix" -}}
+{{- $readOnlyDagitPathType := .Values.ingress.readOnlyDagit.pathType | default "Prefix" -}}
+{{- $flowerPathType := .Values.ingress.flower.pathType | default "Prefix" -}}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -66,7 +69,7 @@ spec:
               service:
                 name: {{ .serviceName }}
                 port:
-                  {{- include "ingress.service.port" . | indent 16 }
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
           - path: {{ .Values.ingress.readOnlyDagit.path | default "/*" }}
             pathType: {{ $readOnlyDagitPathType }}
