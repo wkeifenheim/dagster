@@ -1,5 +1,5 @@
-{{- if .Values.ingress.enabled -}}
-apiVersion: extensions/v1beta1
+{{- if and (.Values.ingress.enabled) (.Capabilities.APIVersions.Has "networking.k8s.io/v1/Ingress") -}}
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "dagster.fullname" . }}-ingress
@@ -10,7 +10,7 @@ metadata:
     {{ $key }}: {{ $value | squote }}
     {{- end }}
 spec:
-  # See: https://github.com/helm/charts/blob/master/stable/airflow/templates/ingress-web.yaml
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
   tls:
     {{- if .Values.ingress.dagit.tls.enabled }}
     - hosts:
@@ -33,19 +33,27 @@ spec:
         paths:
           {{- range .Values.ingress.dagit.precedingPaths }}
           - path: {{ .path }}
+            pathType: {{ $dagitPathType }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
           - path: {{ .Values.ingress.dagit.path | default "/*" }}
+            pathType: {{ $dagitPathType }}
             backend:
-              serviceName: {{ include "dagster.dagit.fullname" . }}
-              servicePort: {{ .Values.dagit.service.port | default 80 }}
+              service:
+                name: {{ include "dagster.dagit.fullname" . }}
+                port:
+                  number: {{ .Values.dagit.service.port | default 80 }}
           {{- range .Values.ingress.dagit.succeedingPaths }}
           - path: {{ .path }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
     {{- if .Values.dagit.enableReadOnly }}
     - host: {{ .Values.ingress.readOnlyDagit.host }}
@@ -53,19 +61,28 @@ spec:
         paths:
           {{- range .Values.ingress.readOnlyDagit.precedingPaths }}
           - path: {{ .path }}
+            pathType: {{ $readOnlyDagitPathType }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }
           {{- end }}
           - path: {{ .Values.ingress.readOnlyDagit.path | default "/*" }}
+            pathType: {{ $readOnlyDagitPathType }}
             backend:
-              serviceName: {{ template "dagster.dagit.fullname" dict "Values" .Values "Release" .Release "dagitReadOnly" true }}
-              servicePort: {{ .Values.dagit.service.port | default 80 }}
+              service:
+                name: {{ template "dagster.dagit.fullname" dict "Values" .Values "Release" .Release "dagitReadOnly" true }}
+                port:
+                  number: {{ .Values.dagit.service.port | default 80 }}
           {{- range .Values.ingress.readOnlyDagit.succeedingPaths }}
           - path: {{ .path }}
+            pathType: {{ $readOnlyDagitPathType }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
     {{end}}
     {{- if .Values.flower.enabled }}
@@ -74,19 +91,28 @@ spec:
         paths:
           {{- range .Values.ingress.flower.precedingPaths }}
           - path: {{ .path }}
+            pathType: {{ $flowerPathType }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
           - path: {{ .Values.ingress.flower.path | default "/*" }}
+            pathType: {{ $flowerPathType }}
             backend:
-              serviceName: {{ template "dagster.fullname" . }}-flower-service
-              servicePort: {{ .Values.flower.service.port }}
+              service:
+                name: {{ template "dagster.fullname" . }}-flower-service
+                port:
+                  number: {{ .Values.flower.service.port }}
           {{- range .Values.ingress.flower.succeedingPaths }}
           - path: {{ .path }}
+            pathType: {{ $flowerPathType }}
             backend:
-              serviceName: {{ .serviceName }}
-              servicePort: {{ .servicePort }}
+              service:
+                name: {{ .serviceName }}
+                port:
+                  {{- include "ingress.service.port" . | indent 16 }}
           {{- end }}
     {{end}}
 {{end}}
