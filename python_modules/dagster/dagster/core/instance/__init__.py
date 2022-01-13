@@ -1230,12 +1230,6 @@ records = instance.get_event_records(
         check.inst_param(asset_key, "asset_key", AssetKey)
         return self._event_storage.get_asset_run_ids(asset_key)
 
-    def all_asset_tags(self):
-        return {}
-
-    def get_asset_tags(self, asset_key):  # pylint: disable=unused-argument
-        return {}
-
     @traced
     def wipe_assets(self, asset_keys):
         check.list_param(asset_keys, "asset_keys", of_type=AssetKey)
@@ -1685,7 +1679,6 @@ records = instance.get_event_records(
                 schedule_state.job_name: {
                     "status": schedule_state.status.value,
                     "cron_schedule": schedule_state.job_specific_data.cron_schedule,
-                    "repository_pointer": schedule_state.origin.get_repo_cli_args(),
                     "schedule_origin_id": schedule_state.job_origin_id,
                     "repository_origin_id": schedule_state.repository_origin_id,
                 }
@@ -1731,9 +1724,11 @@ records = instance.get_event_records(
         if job_state:
             self.update_job_state(job_state.with_status(InstigatorStatus.STOPPED))
 
+    @traced
     def all_stored_job_state(self, repository_origin_id=None, job_type=None):
         return self._schedule_storage.all_stored_job_state(repository_origin_id, job_type)
 
+    @traced
     def get_job_state(self, job_origin_id):
         return self._schedule_storage.get_job_state(job_origin_id)
 
@@ -1746,17 +1741,20 @@ records = instance.get_event_records(
     def delete_job_state(self, job_origin_id):
         return self._schedule_storage.delete_job_state(job_origin_id)
 
+    @traced
     def get_job_tick(self, job_origin_id, timestamp):
         matches = self._schedule_storage.get_job_ticks(
             job_origin_id, before=timestamp + 1, after=timestamp - 1, limit=1
         )
         return matches[0] if len(matches) else None
 
+    @traced
     def get_job_ticks(self, job_origin_id, before=None, after=None, limit=None):
         return self._schedule_storage.get_job_ticks(
             job_origin_id, before=before, after=after, limit=limit
         )
 
+    @traced
     def get_latest_job_tick(self, job_origin_id):
         return self._schedule_storage.get_latest_job_tick(job_origin_id)
 
@@ -1766,6 +1764,7 @@ records = instance.get_event_records(
     def update_job_tick(self, tick):
         return self._schedule_storage.update_job_tick(tick)
 
+    @traced
     def get_job_tick_stats(self, job_origin_id):
         return self._schedule_storage.get_job_tick_stats(job_origin_id)
 

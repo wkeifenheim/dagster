@@ -1,4 +1,14 @@
 import {gql, useQuery} from '@apollo/client';
+import {
+  Box,
+  ButtonGroup,
+  ColorsWIP,
+  IconWIP,
+  NonIdealState,
+  Spinner,
+  Caption,
+  Subheading,
+} from '@dagster-io/ui';
 import flatMap from 'lodash/flatMap';
 import uniq from 'lodash/uniq';
 import * as React from 'react';
@@ -7,22 +17,15 @@ import styled from 'styled-components/macro';
 
 import {SidebarSection} from '../pipelines/SidebarComponents';
 import {METADATA_ENTRY_FRAGMENT} from '../runs/MetadataEntry';
-import {Box} from '../ui/Box';
-import {ButtonGroup} from '../ui/ButtonGroup';
-import {ColorsWIP} from '../ui/Colors';
-import {IconWIP} from '../ui/Icon';
-import {NonIdealState} from '../ui/NonIdealState';
-import {Spinner} from '../ui/Spinner';
-import {Caption, Subheading} from '../ui/Text';
 import {CurrentRunsBanner} from '../workspace/asset-graph/CurrentRunsBanner';
 import {LiveDataForNode} from '../workspace/asset-graph/Utils';
 
 import {ASSET_LINEAGE_FRAGMENT} from './AssetLineageElements';
 import {AssetMaterializationTable} from './AssetMaterializationTable';
-import {AssetValueGraph} from './AssetValueGraph';
+import {AssetValueGraph, AssetValueGraphData} from './AssetValueGraph';
 import {AssetViewParams} from './AssetView';
 import {LatestMaterializationMetadata} from './LastMaterializationMetadata';
-import {AssetKey, AssetNumericHistoricalData} from './types';
+import {AssetKey} from './types';
 import {AssetMaterializationFragment} from './types/AssetMaterializationFragment';
 import {
   AssetMaterializationsQuery,
@@ -104,7 +107,7 @@ export const AssetMaterializations: React.FC<Props> = ({
     return (
       <>
         <CurrentRunsBanner liveData={liveData} />
-        <SidebarSection title={'Materialization in Last Run'}>
+        <SidebarSection title="Materialization in Last Run">
           <>
             {latest ? (
               <div style={{margin: -1, maxWidth: '100%', overflowX: 'auto'}}>
@@ -126,7 +129,7 @@ export const AssetMaterializations: React.FC<Props> = ({
             </Box>
           </>
         </SidebarSection>
-        <SidebarSection title={'Materialization Plots'}>
+        <SidebarSection title="Materialization Plots">
           <AssetMaterializationGraphs
             xAxis={xAxis}
             asSidebarSection
@@ -242,7 +245,7 @@ const AssetMaterializationGraphs: React.FC<{
             <Box padding={{horizontal: 24, vertical: 16}}>
               <AssetValueGraph
                 label={label}
-                width={'100%'}
+                width="100%"
                 data={graphDataByMetadataLabel[label]}
                 xHover={xHover}
                 onHoverX={(x) => x !== xHover && setXHover(x)}
@@ -276,7 +279,9 @@ const extractNumericData = (
   assetMaterializations: AssetMaterializationFragment[],
   xAxis: 'time' | 'partition',
 ) => {
-  const series: AssetNumericHistoricalData = {};
+  const series: {
+    [metadataEntryLabel: string]: AssetValueGraphData;
+  } = {};
 
   // Build a set of the numeric metadata entry labels (note they may be sparsely emitted)
   const numericMetadataLabels = uniq(
